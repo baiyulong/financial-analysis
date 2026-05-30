@@ -8,6 +8,7 @@ use crossterm::{
 };
 use fa_core::DataProvider;
 use fa_data::{router::ProviderRouter, sina::SinaFinanceProvider, yahoo::YahooFinanceProvider};
+use fa_backtest::{BuiltinStrategy, Engine};
 use fa_tui::{
     app::{AppAction, AppScreen, AppState, State},
     event::EventHandler,
@@ -141,8 +142,9 @@ async fn run_app(
                         &action,
                         AppAction::EnterChart(_) | AppAction::ChartChangePeriod(_)
                     );
+                    let needs_backtest_run = matches!(&action, AppAction::RunBacktest);
 
-                    let (symbol_period, should_quit) = {
+                    let (symbol_period, backtest_params, should_quit) = {
                         let mut state = app_state.write().await;
                         state.apply(action);
                         let sp = if needs_ohlcv_fetch {
@@ -150,7 +152,12 @@ async fn run_app(
                                 Some((cs.symbol.clone(), cs.period))
                             } else { None }
                         } else { None };
-                        (sp, state.should_quit)
+                        let bp = if needs_backtest_run {
+                            if let AppScreen::Backtest(bs) = &state.screen {
+                                Some((bs.symbol.clone(), bs.strategy_idx, bs.config.clone()))
+                            } else { None }
+                        } else { None };
+                        (sp, bp, state.should_quit)
                     }; // write lock released here
 
                     if let Some((symbol, period)) = symbol_period {
@@ -165,6 +172,26 @@ async fn run_app(
                                     let _ = tx.send(AppAction::StatusMessage(
                                         format!("K线获取失败: {}", e)
                                     )).await;
+                                }
+                            }
+                        });
+                    }
+
+                    if let Some((symbol, strategy_idx, config)) = backtest_params {
+                        let router = Arc::clone(router);
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            match router.fetch_ohlcv(&symbol, fa_core::Period::Year1).await {
+                                Ok(data) => {
+                                    let engine = Engine::new(config);
+                                    let presets = BuiltinStrategy::all();
+                                    let preset = &presets[strategy_idx.min(presets.len().saturating_sub(1))];
+                                    let mut strategy = preset.to_boxed();
+                                    let result = engine.run(&data, strategy.as_mut());
+                                    let _ = tx.send(AppAction::BacktestComplete(result)).await;
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(AppAction::BacktestFailed(e.to_string())).await;
                                 }
                             }
                         });

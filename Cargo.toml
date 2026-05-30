@@ -42,6 +42,7 @@ edition = "2021"
 fa-core      = { path = "crates/fa-core" }
 fa-data      = { path = "crates/fa-data" }
 fa-tui       = { path = "crates/fa-tui" }
+fa-backtest  = { path = "crates/fa-backtest" }
 tokio        = { workspace = true }
 anyhow       = { workspace = true }
 toml         = { workspace = true }
