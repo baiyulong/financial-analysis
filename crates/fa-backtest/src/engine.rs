@@ -59,13 +59,13 @@ impl Engine {
 
         let owned: Vec<OHLCV> = data.iter().map(|b| (*b).clone()).collect();
 
-        for (i, bar) in owned.iter().enumerate() {
-            let ctx = BarContext {
-                bar,
-                position: portfolio.position,
-                cash: portfolio.cash,
-                history: &owned[..=i],
-            };
+        for (i, _) in owned.iter().enumerate() {
+            let ctx = BarContext::new(
+                &owned[..=i],
+                portfolio.position,
+                portfolio.cash,
+            );
+            let bar = ctx.bar;
 
             let signal = strategy.on_bar(&ctx);
 
