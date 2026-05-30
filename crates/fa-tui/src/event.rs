@@ -104,6 +104,19 @@ impl EventHandler {
         }
     }
 
+    /// Key mappings for the Backtest screen.
+    pub fn map_key_backtest(code: KeyCode, modifiers: KeyModifiers) -> Option<AppAction> {
+        match (code, modifiers) {
+            (KeyCode::Esc, _)                        => Some(AppAction::ExitBacktest),
+            (KeyCode::Char('r'), KeyModifiers::NONE) => Some(AppAction::RunBacktest),
+            (KeyCode::Left, _)                       => Some(AppAction::BacktestPrevStrategy),
+            (KeyCode::Right, _)                      => Some(AppAction::BacktestNextStrategy),
+            (KeyCode::Up, _)                         => Some(AppAction::BacktestScrollUp),
+            (KeyCode::Down, _)                       => Some(AppAction::BacktestScrollDown),
+            _ => None,
+        }
+    }
+
     fn resolve_action(state: &State, code: KeyCode, modifiers: KeyModifiers) -> Option<AppAction> {
         // Always quit on Ctrl+C, regardless of screen or mode.
         if code == KeyCode::Char('c') && modifiers == KeyModifiers::CONTROL {
@@ -112,8 +125,16 @@ impl EventHandler {
 
         if matches!(state.screen, AppScreen::Chart(_)) {
             Self::map_key_chart(code, modifiers)
+        } else if matches!(state.screen, AppScreen::Backtest(_)) {
+            Self::map_key_backtest(code, modifiers)
         } else if state.is_add_active {
             Self::map_key_add(code, modifiers)
+        } else if !state.is_search_active
+            && !state.is_add_active
+            && code == KeyCode::Char('b')
+            && modifiers == KeyModifiers::NONE
+        {
+            state.selected_symbol().map(|sym| AppAction::StartBacktest(sym.clone()))
         } else if !state.is_search_active
             && code == KeyCode::Char('a')
             && modifiers == KeyModifiers::NONE
@@ -312,5 +333,51 @@ mod tests {
     fn test_map_key_chart_unknown_key_returns_none() {
         assert!(EventHandler::map_key_chart(KeyCode::F(12), KeyModifiers::NONE).is_none());
         assert!(EventHandler::map_key_chart(KeyCode::Tab, KeyModifiers::NONE).is_none());
+    }
+
+    #[test]
+    fn test_map_key_backtest_run() {
+        assert!(matches!(
+            EventHandler::map_key_backtest(KeyCode::Char('r'), KeyModifiers::NONE),
+            Some(AppAction::RunBacktest)
+        ));
+    }
+
+    #[test]
+    fn test_map_key_backtest_esc_exits() {
+        assert!(matches!(
+            EventHandler::map_key_backtest(KeyCode::Esc, KeyModifiers::NONE),
+            Some(AppAction::ExitBacktest)
+        ));
+    }
+
+    #[test]
+    fn test_map_key_backtest_scroll() {
+        assert!(matches!(
+            EventHandler::map_key_backtest(KeyCode::Up, KeyModifiers::NONE),
+            Some(AppAction::BacktestScrollUp)
+        ));
+        assert!(matches!(
+            EventHandler::map_key_backtest(KeyCode::Down, KeyModifiers::NONE),
+            Some(AppAction::BacktestScrollDown)
+        ));
+    }
+
+    #[test]
+    fn test_b_key_starts_backtest_when_symbol_selected() {
+        let mut state = State::default();
+        state.watchlist.push(Symbol::new("AAPL", Market::USStock));
+        let action = EventHandler::resolve_action(&state, KeyCode::Char('b'), KeyModifiers::NONE);
+        assert!(matches!(action, Some(AppAction::StartBacktest(_))));
+    }
+
+    #[test]
+    fn test_resolve_backtest_screen_routes_to_map_key_backtest() {
+        use crate::app::{AppScreen, BacktestState};
+        let mut state = State::default();
+        let sym = Symbol::new("AAPL", Market::USStock);
+        state.screen = AppScreen::Backtest(BacktestState::new(sym));
+        let action = EventHandler::resolve_action(&state, KeyCode::Char('r'), KeyModifiers::NONE);
+        assert!(matches!(action, Some(AppAction::RunBacktest)));
     }
 }
