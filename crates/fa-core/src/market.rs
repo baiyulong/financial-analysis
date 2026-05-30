@@ -3,7 +3,7 @@ use std::fmt;
 use std::str::FromStr;
 use crate::DataError;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Market {
     USStock,
@@ -33,9 +33,9 @@ impl FromStr for Market {
             "us" | "us_stock" | "nasdaq" | "nyse" => Ok(Market::USStock),
             "a_share" | "ashare" | "cn" | "china" => Ok(Market::AShare),
             "hk" | "hk_stock" | "hkex"            => Ok(Market::HKStock),
-            "crypto" | "btc" | "eth"               => Ok(Market::Crypto),
+            "crypto"                               => Ok(Market::Crypto),
             "forex" | "fx"                         => Ok(Market::Forex),
-            _ => Err(DataError::Parse(format!("Unknown market: {s}"))),
+            _ => Err(DataError::MarketNotSupported { market: s.to_string() }),
         }
     }
 }

@@ -1,6 +1,7 @@
+use std::sync::Arc;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum DataError {
     #[error("Network error: {0}")]
     Network(String),
@@ -21,8 +22,14 @@ pub enum DataError {
     Cache(String),
 
     #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(Arc<std::io::Error>),
 
     #[error("Config error: {0}")]
     Config(String),
+}
+
+impl From<std::io::Error> for DataError {
+    fn from(e: std::io::Error) -> Self {
+        DataError::Io(Arc::new(e))
+    }
 }
