@@ -5,9 +5,13 @@ edition = "2021"
 
 [dependencies]
 fa-core      = { path = "../fa-core" }
+fa-indicator = { path = "../fa-indicator" }
 ratatui      = { workspace = true }
 crossterm    = { workspace = true }
 tokio        = { workspace = true }
 async-trait  = { workspace = true }
 chrono       = { workspace = true }
 rust_decimal = { workspace = true }
+
+[dev-dependencies]
+rust_decimal_macros = { workspace = true }

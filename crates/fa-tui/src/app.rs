@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use fa_core::{Portfolio, Quote, Symbol};
+use fa_core::{Portfolio, Quote, Symbol, OHLCV, Period};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -23,6 +23,45 @@ impl FocusedPanel {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum AppScreen {
+    Main,
+    Chart(ChartState),
+}
+
+impl Default for AppScreen {
+    fn default() -> Self { AppScreen::Main }
+}
+
+#[derive(Debug, Clone)]
+pub struct ChartState {
+    pub symbol: Symbol,
+    pub period: Period,
+    pub data: Vec<OHLCV>,
+    pub cursor: usize,
+    pub bar_width: u16,
+    pub ma_periods: Vec<usize>,
+    pub loading: bool,
+}
+
+impl ChartState {
+    pub fn new(symbol: Symbol, period: Period) -> Self {
+        Self {
+            symbol,
+            period,
+            data: vec![],
+            cursor: 0,
+            bar_width: 3,
+            ma_periods: vec![5, 10, 20],
+            loading: true,
+        }
+    }
+
+    pub fn current_bar(&self) -> Option<&OHLCV> {
+        self.data.get(self.cursor)
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct State {
     pub watchlist: Vec<Symbol>,
@@ -36,6 +75,7 @@ pub struct State {
     pub is_search_active: bool,
     pub search_input: String,
     pub should_quit: bool,
+    pub screen: AppScreen,
 }
 
 impl State {
@@ -100,6 +140,42 @@ impl State {
             AppAction::Refresh => {
                 self.status_message = None;
             }
+            AppAction::EnterChart(sym) => {
+                self.screen = AppScreen::Chart(ChartState::new(sym, Period::Month1));
+            }
+            AppAction::ExitChart => {
+                self.screen = AppScreen::Main;
+            }
+            AppAction::ChartDataLoaded(data) => {
+                if let AppScreen::Chart(ref mut cs) = self.screen {
+                    let len = data.len();
+                    cs.data = data;
+                    cs.cursor = len.saturating_sub(1);
+                    cs.loading = false;
+                }
+            }
+            AppAction::ChartMoveCursor(delta) => {
+                if let AppScreen::Chart(ref mut cs) = self.screen {
+                    let len = cs.data.len();
+                    if len > 0 {
+                        cs.cursor = (cs.cursor as i64 + delta as i64)
+                            .clamp(0, len as i64 - 1) as usize;
+                    }
+                }
+            }
+            AppAction::ChartZoom(zoom_in) => {
+                if let AppScreen::Chart(ref mut cs) = self.screen {
+                    if zoom_in && cs.bar_width < 8 { cs.bar_width += 1; }
+                    else if !zoom_in && cs.bar_width > 2 { cs.bar_width -= 1; }
+                }
+            }
+            AppAction::ChartChangePeriod(period) => {
+                if let AppScreen::Chart(ref mut cs) = self.screen {
+                    cs.period = period;
+                    cs.loading = true;
+                    cs.data.clear();
+                }
+            }
         }
     }
 
@@ -131,6 +207,12 @@ pub enum AppAction {
     Refresh,
     QuotesUpdated(Vec<Quote>),
     StatusMessage(String),
+    EnterChart(Symbol),
+    ExitChart,
+    ChartDataLoaded(Vec<OHLCV>),
+    ChartMoveCursor(i32),
+    ChartZoom(bool),
+    ChartChangePeriod(Period),
 }
 
 #[cfg(test)]
@@ -230,5 +312,105 @@ mod tests {
         s.apply(AppAction::DeleteSelected);
         assert_eq!(s.watchlist.len(), 1);
         assert!(!s.quotes.contains_key("AAPL"));
+    }
+
+    #[test]
+    fn test_enter_chart_sets_screen() {
+        let mut s = make_state();
+        let sym = Symbol::new("AAPL", Market::USStock);
+        s.apply(AppAction::EnterChart(sym));
+        assert!(matches!(s.screen, AppScreen::Chart(_)));
+    }
+
+    #[test]
+    fn test_exit_chart_returns_to_main() {
+        let mut s = make_state();
+        s.screen = AppScreen::Chart(ChartState::new(
+            Symbol::new("AAPL", Market::USStock),
+            Period::Month1,
+        ));
+        s.apply(AppAction::ExitChart);
+        assert!(matches!(s.screen, AppScreen::Main));
+    }
+
+    #[test]
+    fn test_chart_data_loaded_sets_cursor_to_last() {
+        use chrono::Utc;
+        use rust_decimal_macros::dec;
+        let mut s = make_state();
+        s.screen = AppScreen::Chart(ChartState::new(Symbol::new("AAPL", Market::USStock), Period::Month1));
+        let bars = vec![
+            OHLCV { symbol: Symbol::new("AAPL", Market::USStock), timestamp: Utc::now(),
+                    open: dec!(100), high: dec!(110), low: dec!(90), close: dec!(105), volume: 1000 },
+            OHLCV { symbol: Symbol::new("AAPL", Market::USStock), timestamp: Utc::now(),
+                    open: dec!(105), high: dec!(115), low: dec!(95), close: dec!(110), volume: 2000 },
+        ];
+        s.apply(AppAction::ChartDataLoaded(bars));
+        if let AppScreen::Chart(ref cs) = s.screen {
+            assert_eq!(cs.cursor, 1);
+            assert!(!cs.loading);
+            assert_eq!(cs.data.len(), 2);
+        } else {
+            panic!("expected Chart screen");
+        }
+    }
+
+    #[test]
+    fn test_chart_cursor_clamps_at_boundaries() {
+        use chrono::Utc;
+        use rust_decimal_macros::dec;
+        let mut s = make_state();
+        let bar = OHLCV { symbol: Symbol::new("AAPL", Market::USStock), timestamp: Utc::now(),
+                          open: dec!(100), high: dec!(110), low: dec!(90), close: dec!(105), volume: 0 };
+        s.screen = AppScreen::Chart(ChartState {
+            symbol: Symbol::new("AAPL", Market::USStock),
+            period: Period::Month1,
+            data: vec![bar.clone(), bar],
+            cursor: 0,
+            bar_width: 3,
+            ma_periods: vec![5],
+            loading: false,
+        });
+        s.apply(AppAction::ChartMoveCursor(-1));
+        if let AppScreen::Chart(ref cs) = s.screen { assert_eq!(cs.cursor, 0); }
+        s.apply(AppAction::ChartMoveCursor(1));
+        s.apply(AppAction::ChartMoveCursor(1));
+        if let AppScreen::Chart(ref cs) = s.screen { assert_eq!(cs.cursor, 1); }
+    }
+
+    #[test]
+    fn test_chart_zoom_clamps() {
+        let mut s = make_state();
+        s.screen = AppScreen::Chart(ChartState::new(Symbol::new("AAPL", Market::USStock), Period::Month1));
+        s.apply(AppAction::ChartZoom(false));
+        s.apply(AppAction::ChartZoom(false));
+        s.apply(AppAction::ChartZoom(false));
+        if let AppScreen::Chart(ref cs) = s.screen { assert_eq!(cs.bar_width, 2); }
+        for _ in 0..10 { s.apply(AppAction::ChartZoom(true)); }
+        if let AppScreen::Chart(ref cs) = s.screen { assert_eq!(cs.bar_width, 8); }
+    }
+
+    #[test]
+    fn test_chart_change_period_resets_data() {
+        use chrono::Utc;
+        use rust_decimal_macros::dec;
+        let mut s = make_state();
+        let bar = OHLCV { symbol: Symbol::new("AAPL", Market::USStock), timestamp: Utc::now(),
+                          open: dec!(100), high: dec!(110), low: dec!(90), close: dec!(105), volume: 0 };
+        s.screen = AppScreen::Chart(ChartState {
+            symbol: Symbol::new("AAPL", Market::USStock),
+            period: Period::Month1,
+            data: vec![bar],
+            cursor: 0,
+            bar_width: 3,
+            ma_periods: vec![5],
+            loading: false,
+        });
+        s.apply(AppAction::ChartChangePeriod(Period::Year1));
+        if let AppScreen::Chart(ref cs) = s.screen {
+            assert_eq!(cs.period, Period::Year1);
+            assert!(cs.loading);
+            assert!(cs.data.is_empty());
+        }
     }
 }
