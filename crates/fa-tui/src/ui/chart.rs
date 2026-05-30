@@ -89,20 +89,27 @@ fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
     let ma_configs: &[(usize, Color)] = &[(5, Color::Yellow), (10, Color::Cyan), (20, Color::Magenta)];
     let cursor_in_view = cs.cursor.saturating_sub(start);
 
+    // Pre-compute MA values outside the paint closure to avoid per-frame allocation
+    let ma_data: Vec<(Color, Vec<Option<rust_decimal::Decimal>>)> = ma_configs.iter()
+        .filter(|&&(period, _)| cs.ma_periods.contains(&period))
+        .map(|&(period, color)| (color, sma(&cs.data, period)))
+        .collect();
+
     let canvas = Canvas::default()
         .block(Block::default().borders(Borders::ALL))
         .x_bounds([0.0, x_max])
         .y_bounds([y_min, y_max])
         .paint(|ctx| {
+            // Pass 1: K-line bodies and wicks
             for (i, bar) in visible.iter().enumerate() {
                 let x_center = i as f64 * bar_w as f64 + bar_w as f64 / 2.0;
                 let open  = bar.open.to_f64().unwrap_or(y_min);
-                let high  = bar.high.to_f64().unwrap_or(y_min);
-                let low   = bar.low.to_f64().unwrap_or(y_min);
                 let close = bar.close.to_f64().unwrap_or(y_min);
-                let color = if close >= open { Color::Red } else { Color::Green };
                 let body_top = open.max(close);
                 let body_bot = open.min(close);
+                let high  = bar.high.to_f64().unwrap_or(body_top);
+                let low   = bar.low.to_f64().unwrap_or(body_bot);
+                let color = if close >= open { Color::Red } else { Color::Green };
 
                 ctx.draw(&CanvasLine { x1: x_center, y1: body_top, x2: x_center, y2: high, color });
                 ctx.draw(&CanvasLine { x1: x_center, y1: low, x2: x_center, y2: body_bot, color });
@@ -113,33 +120,34 @@ fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
                     height: (body_top - body_bot).max(0.05 * (y_max - y_min)),
                     color,
                 });
-
-                if i == cursor_in_view {
-                    ctx.draw(&CanvasLine {
-                        x1: x_center, y1: y_min,
-                        x2: x_center, y2: y_max,
-                        color: Color::White,
-                    });
-                }
             }
 
-            for &(period, color) in ma_configs {
-                if !cs.ma_periods.contains(&period) { continue; }
-                let all_ma = sma(&cs.data, period);
-                if all_ma.len() < end { return; }
+            // Pass 2: MA overlay lines
+            for (color, all_ma) in &ma_data {
+                if all_ma.len() < end { continue; } // skip this MA only, not the closure
                 let vis_ma = &all_ma[start..end];
                 let mut prev: Option<(f64, f64)> = None;
                 for (i, v) in vis_ma.iter().enumerate() {
                     if let Some(y) = v.and_then(|d| d.to_f64()) {
                         let x = i as f64 * bar_w as f64 + bar_w as f64 / 2.0;
                         if let Some((px, py)) = prev {
-                            ctx.draw(&CanvasLine { x1: px, y1: py, x2: x, y2: y, color });
+                            ctx.draw(&CanvasLine { x1: px, y1: py, x2: x, y2: y, color: *color });
                         }
                         prev = Some((x, y));
                     } else {
                         prev = None;
                     }
                 }
+            }
+
+            // Pass 3: Cursor crosshair — drawn last so it appears on top
+            if cursor_in_view < visible.len() {
+                let x_center = cursor_in_view as f64 * bar_w as f64 + bar_w as f64 / 2.0;
+                ctx.draw(&CanvasLine {
+                    x1: x_center, y1: y_min,
+                    x2: x_center, y2: y_max,
+                    color: Color::White,
+                });
             }
         });
 
