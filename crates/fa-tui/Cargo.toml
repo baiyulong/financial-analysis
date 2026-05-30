@@ -1,0 +1,13 @@
+[package]
+name = "fa-tui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fa-core      = { path = "../fa-core" }
+ratatui      = { workspace = true }
+crossterm    = { workspace = true }
+tokio        = { workspace = true }
+async-trait  = { workspace = true }
+chrono       = { workspace = true }
+rust_decimal = { workspace = true }

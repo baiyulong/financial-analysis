@@ -1,0 +1,1 @@
+// Sina Finance data provider

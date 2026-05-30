@@ -1,0 +1,49 @@
+[workspace]
+members = [".", "crates/fa-core", "crates/fa-data", "crates/fa-tui"]
+resolver = "2"
+
+[workspace.dependencies]
+# TUI
+ratatui = "0.28"
+crossterm = "0.28"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# HTTP
+reqwest = { version = "0.12", features = ["json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Time & Finance
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+rust_decimal_macros = "1"
+
+# Config
+toml = "0.8"
+
+# Testing
+mockito = "1"
+
+[package]
+name = "financial-analysis"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fa-core = { path = "crates/fa-core" }
+fa-data = { path = "crates/fa-data" }
+fa-tui  = { path = "crates/fa-tui" }
+tokio   = { workspace = true }
+anyhow  = { workspace = true }
+toml    = { workspace = true }
+serde   = { workspace = true }
+dirs    = "5"
