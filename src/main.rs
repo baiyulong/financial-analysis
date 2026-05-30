@@ -140,7 +140,7 @@ async fn run_app(
                 Ok(Some(action)) => {
                     let needs_ohlcv_fetch = matches!(
                         &action,
-                        AppAction::EnterChart(_) | AppAction::ChartChangePeriod(_)
+                        AppAction::EnterChart(_) | AppAction::ChartChangePeriod(_) | AppAction::ChartLoadMoreHistory
                     );
                     let needs_backtest_run = matches!(&action, AppAction::RunBacktest);
 
