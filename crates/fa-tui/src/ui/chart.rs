@@ -88,8 +88,9 @@ impl Widget for KlineChart<'_> {
             }
         }
 
-        // ── Pass 2: MA overlay (─ dot at price row for each bar) ─────────
+        // ── Pass 2: MA overlay — continuous line connecting bar centers ──
         for (color, vis_ma) in &self.ma_data {
+            let mut prev: Option<(u16, u16)> = None; // (center_col, row)
             for (i, v) in vis_ma.iter().enumerate() {
                 if let Some(price) = v.and_then(|d| d.to_f64()) {
                     let x_off = (i as u16) * self.bar_w;
@@ -98,9 +99,34 @@ impl Widget for KlineChart<'_> {
                     }
                     let center_col = inner.x + x_off + self.bar_w / 2;
                     let row = price_to_row(price, self.y_min, self.y_max, h);
+
+                    // Draw current point
                     if center_col < inner.x + w {
                         buf[(center_col, inner.y + row)].set_char('─').set_fg(*color);
                     }
+
+                    // Fill columns between previous center and current center
+                    if let Some((prev_col, prev_row)) = prev {
+                        let span = center_col.saturating_sub(prev_col);
+                        for step in 1..span {
+                            let col = prev_col + step;
+                            if col >= inner.x + w {
+                                break;
+                            }
+                            // Linear interpolation of row between the two centers
+                            let t = step as f32 / span as f32;
+                            let interp_row = if prev_row <= row {
+                                prev_row + ((row - prev_row) as f32 * t) as u16
+                            } else {
+                                prev_row - ((prev_row - row) as f32 * t) as u16
+                            };
+                            buf[(col, inner.y + interp_row)].set_char('─').set_fg(*color);
+                        }
+                    }
+
+                    prev = Some((center_col, row));
+                } else {
+                    prev = None;
                 }
             }
         }
