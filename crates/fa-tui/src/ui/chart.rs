@@ -224,6 +224,17 @@ fn period_label(p: &Period) -> &'static str {
     }
 }
 
+/// Calculate the visible window (start, end) indices for the given inner width.
+fn visible_window(cs: &ChartState, inner_w: usize) -> (usize, usize) {
+    let bar_w = cs.bar_width as usize;
+    let max_visible = (inner_w / bar_w).max(1);
+    let half = max_visible / 2;
+    let end = (cs.cursor + half + 1).min(cs.data.len());
+    let start = end.saturating_sub(max_visible);
+    let end = (start + max_visible).min(cs.data.len());
+    (start, end)
+}
+
 fn render_titlebar(f: &mut Frame, cs: &ChartState, area: Rect) {
     let text = format!(
         " {}  {}  | [1]1D [5]5D [m]1M [q]3M [y]1Y  [←→]光标  [[]缩放  [Esc]返回",
@@ -262,13 +273,7 @@ fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
 
     // Inner width (minus 2 border chars) determines how many bars fit
     let inner_w = area.width.saturating_sub(2) as usize;
-    let bar_w = cs.bar_width as usize;
-    let max_visible = (inner_w / bar_w).max(1);
-
-    let half = max_visible / 2;
-    let end = (cs.cursor + half + 1).min(cs.data.len());
-    let start = end.saturating_sub(max_visible);
-    let end = (start + max_visible).min(cs.data.len());
+    let (start, end) = visible_window(cs, inner_w);
     let visible = &cs.data[start..end];
 
     let price_min = visible.iter()
@@ -307,14 +312,9 @@ fn render_volume(f: &mut Frame, cs: &ChartState, area: Rect) {
         return;
     }
 
-    let inner_w = area.width as usize;
-    let bar_w = cs.bar_width as usize;
-    let max_visible = (inner_w / bar_w).max(1);
-
-    let half = max_visible / 2;
-    let end = (cs.cursor + half + 1).min(cs.data.len());
-    let start = end.saturating_sub(max_visible);
-    let end = (start + max_visible).min(cs.data.len());
+    // Inner width (minus 2 border chars) to match render_chart
+    let inner_w = area.width.saturating_sub(2) as usize;
+    let (start, end) = visible_window(cs, inner_w);
     let visible = &cs.data[start..end];
 
     f.render_widget(VolumeChart { visible, bar_w: cs.bar_width }, area);
