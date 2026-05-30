@@ -22,10 +22,15 @@ impl Symbol {
     pub fn yahoo_ticker(&self) -> String {
         match &self.market {
             Market::AShare => {
-                if self.code.starts_with('6') {
-                    format!("{}.SS", self.code) // Shanghai
+                // Support sh/sz-prefixed codes (e.g. sh000001 for Shanghai Composite)
+                if let Some(num) = self.code.strip_prefix("sh") {
+                    format!("{}.SS", num)
+                } else if let Some(num) = self.code.strip_prefix("sz") {
+                    format!("{}.SZ", num)
+                } else if self.code.starts_with('6') {
+                    format!("{}.SS", self.code) // Shanghai stocks
                 } else {
-                    format!("{}.SZ", self.code) // Shenzhen
+                    format!("{}.SZ", self.code) // Shenzhen stocks
                 }
             }
             Market::HKStock => format!("{:0>4}.HK", self.code),
@@ -37,6 +42,10 @@ impl Symbol {
     pub fn sina_ticker(&self) -> String {
         match &self.market {
             Market::AShare => {
+                // Pass through if already prefixed (e.g. sh000001, sz399001)
+                if self.code.starts_with("sh") || self.code.starts_with("sz") {
+                    return self.code.clone();
+                }
                 if self.code.starts_with('6') {
                     format!("sh{}", self.code)
                 } else {
@@ -47,8 +56,13 @@ impl Symbol {
         }
     }
 
+    /// Display code, stripping sh/sz exchange prefix if present
     pub fn display_code(&self) -> String {
-        self.code.clone()
+        if let Some(num) = self.code.strip_prefix("sh").or_else(|| self.code.strip_prefix("sz")) {
+            num.to_string()
+        } else {
+            self.code.clone()
+        }
     }
 }
 
@@ -73,6 +87,32 @@ mod tests {
         assert_eq!(s.yahoo_ticker(), "600519.SS");
         let s2 = Symbol::new("000001", Market::AShare);
         assert_eq!(s2.yahoo_ticker(), "000001.SZ");
+    }
+
+    #[test]
+    fn test_yahoo_ticker_index_with_prefix() {
+        // sh prefix → Shanghai (.SS)
+        let idx = Symbol::new("sh000001", Market::AShare);
+        assert_eq!(idx.yahoo_ticker(), "000001.SS");
+        // sz prefix → Shenzhen (.SZ)
+        let idx2 = Symbol::new("sz399001", Market::AShare);
+        assert_eq!(idx2.yahoo_ticker(), "399001.SZ");
+    }
+
+    #[test]
+    fn test_sina_ticker_index_with_prefix() {
+        let idx = Symbol::new("sh000001", Market::AShare);
+        assert_eq!(idx.sina_ticker(), "sh000001");
+        let idx2 = Symbol::new("sz399006", Market::AShare);
+        assert_eq!(idx2.sina_ticker(), "sz399006");
+    }
+
+    #[test]
+    fn test_display_code_strips_prefix() {
+        let idx = Symbol::new("sh000001", Market::AShare);
+        assert_eq!(idx.display_code(), "000001");
+        let s = Symbol::new("600519", Market::AShare);
+        assert_eq!(s.display_code(), "600519");
     }
 
     #[test]

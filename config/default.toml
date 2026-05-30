@@ -7,13 +7,35 @@ default_currency = "CNY"
 [api_keys]
 # alpha_vantage = "YOUR_KEY_HERE"
 
+# A股大盘指数 (使用 sh/sz 前缀区分交易所)
 [[watchlist]]
-symbol = "AAPL"
-market = "us"
+symbol = "sh000001"
+market = "a_share"
 
+[[watchlist]]
+symbol = "sh000300"
+market = "a_share"
+
+[[watchlist]]
+symbol = "sz399001"
+market = "a_share"
+
+[[watchlist]]
+symbol = "sz399006"
+market = "a_share"
+
+[[watchlist]]
+symbol = "sh000016"
+market = "a_share"
+
+# 个股示例
 [[watchlist]]
 symbol = "600519"
 market = "a_share"
+
+[[watchlist]]
+symbol = "AAPL"
+market = "us"
 
 [[portfolio]]
 symbol = "AAPL"
