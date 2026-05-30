@@ -2,6 +2,7 @@ use fa_core::{DataError, Market, Portfolio, Position, Symbol};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GeneralConfig {
@@ -13,7 +14,7 @@ impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
             refresh_interval: 30,
-            default_currency: "USD".to_string(),
+            default_currency: "CNY".to_string(),
         }
     }
 }
@@ -68,15 +69,34 @@ impl Config {
 
     pub fn to_watchlist_symbols(&self) -> Vec<Symbol> {
         self.watchlist.iter().filter_map(|e| {
-            e.market.parse::<Market>().ok().map(|m| Symbol::new(&e.symbol, m))
+            let m = e.market.parse::<Market>().ok()?;
+            Some(Symbol::new(&e.symbol, m))
         }).collect()
     }
 
     pub fn to_portfolio(&self) -> Portfolio {
         let positions = self.portfolio.iter().filter_map(|e| {
-            let market = e.market.parse::<Market>().ok()?;
-            let qty  = e.quantity.parse::<Decimal>().ok()?;
-            let cost = e.cost_basis.parse::<Decimal>().ok()?;
+            let market = match e.market.parse::<Market>() {
+                Ok(m) => m,
+                Err(_) => {
+                    eprintln!("Config: skipping portfolio entry '{}': invalid market '{}'", e.symbol, e.market);
+                    return None;
+                }
+            };
+            let qty = match Decimal::from_str(&e.quantity) {
+                Ok(v) => v,
+                Err(_) => {
+                    eprintln!("Config: skipping portfolio entry '{}': invalid quantity '{}'", e.symbol, e.quantity);
+                    return None;
+                }
+            };
+            let cost = match Decimal::from_str(&e.cost_basis) {
+                Ok(v) => v,
+                Err(_) => {
+                    eprintln!("Config: skipping portfolio entry '{}': invalid cost_basis '{}'", e.symbol, e.cost_basis);
+                    return None;
+                }
+            };
             Some(Position {
                 symbol: Symbol::new(&e.symbol, market),
                 quantity: qty,
@@ -95,7 +115,7 @@ mod tests {
     fn test_default_config() {
         let cfg = Config::default();
         assert_eq!(cfg.general.refresh_interval, 30);
-        assert_eq!(cfg.general.default_currency, "USD");
+        assert_eq!(cfg.general.default_currency, "CNY");
     }
 
     #[test]
