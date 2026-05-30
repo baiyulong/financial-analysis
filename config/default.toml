@@ -1,0 +1,22 @@
+# config/default.toml — Copy to ~/.config/fa/config.toml and customize
+
+[general]
+refresh_interval = 30
+default_currency = "CNY"
+
+[api_keys]
+# alpha_vantage = "YOUR_KEY_HERE"
+
+[[watchlist]]
+symbol = "AAPL"
+market = "us"
+
+[[watchlist]]
+symbol = "600519"
+market = "a_share"
+
+[[portfolio]]
+symbol = "AAPL"
+market = "us"
+quantity = "10"
+cost_basis = "1800.00"
