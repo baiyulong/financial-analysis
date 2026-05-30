@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use fa_backtest::{BacktestConfig, BacktestResult, BuiltinStrategy};
 use fa_core::{Portfolio, Quote, Symbol, OHLCV, Period};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,6 +28,7 @@ impl FocusedPanel {
 pub enum AppScreen {
     Main,
     Chart(ChartState),
+    Backtest(BacktestState),
 }
 
 impl Default for AppScreen {
@@ -59,6 +61,49 @@ impl ChartState {
 
     pub fn current_bar(&self) -> Option<&OHLCV> {
         self.data.get(self.cursor)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum BacktestStatus {
+    Idle,
+    Running,
+    Done,
+    Error(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct BacktestState {
+    pub symbol: fa_core::Symbol,
+    pub strategy_idx: usize,
+    pub config: BacktestConfig,
+    pub result: Option<BacktestResult>,
+    pub trade_scroll: usize,
+    pub status: BacktestStatus,
+}
+
+impl BacktestState {
+    pub fn new(symbol: fa_core::Symbol) -> Self {
+        Self {
+            symbol,
+            strategy_idx: 0,
+            config: BacktestConfig::default(),
+            result: None,
+            trade_scroll: 0,
+            status: BacktestStatus::Idle,
+        }
+    }
+
+    pub fn strategy_count() -> usize { BuiltinStrategy::all().len() }
+
+    pub fn strategy_name(&self) -> &'static str {
+        let all = BuiltinStrategy::all();
+        let idx = self.strategy_idx.min(all.len().saturating_sub(1));
+        match &all[idx] {
+            BuiltinStrategy::MaCross { .. } => "双均线穿越 (MA5×MA20)",
+            BuiltinStrategy::Rsi { .. }     => "RSI 均值回归 (14/30/70)",
+            BuiltinStrategy::Bollinger { .. } => "布林带 (20, 2σ)",
+        }
     }
 }
 
@@ -238,6 +283,52 @@ impl State {
                     cs.data.clear();
                 }
             }
+            AppAction::StartBacktest(sym) => {
+                self.screen = AppScreen::Backtest(BacktestState::new(sym));
+            }
+            AppAction::RunBacktest => {
+                if let AppScreen::Backtest(ref mut bs) = self.screen {
+                    bs.status = BacktestStatus::Running;
+                    bs.result = None;
+                }
+            }
+            AppAction::BacktestComplete(result) => {
+                if let AppScreen::Backtest(ref mut bs) = self.screen {
+                    bs.result = Some(result);
+                    bs.status = BacktestStatus::Done;
+                    bs.trade_scroll = 0;
+                }
+            }
+            AppAction::BacktestFailed(msg) => {
+                if let AppScreen::Backtest(ref mut bs) = self.screen {
+                    bs.status = BacktestStatus::Error(msg);
+                }
+            }
+            AppAction::BacktestNextStrategy => {
+                if let AppScreen::Backtest(ref mut bs) = self.screen {
+                    let count = BacktestState::strategy_count();
+                    bs.strategy_idx = (bs.strategy_idx + 1) % count;
+                }
+            }
+            AppAction::BacktestPrevStrategy => {
+                if let AppScreen::Backtest(ref mut bs) = self.screen {
+                    let count = BacktestState::strategy_count();
+                    bs.strategy_idx = (bs.strategy_idx + count - 1) % count;
+                }
+            }
+            AppAction::BacktestScrollUp => {
+                if let AppScreen::Backtest(ref mut bs) = self.screen {
+                    bs.trade_scroll = bs.trade_scroll.saturating_sub(1);
+                }
+            }
+            AppAction::BacktestScrollDown => {
+                if let AppScreen::Backtest(ref mut bs) = self.screen {
+                    bs.trade_scroll += 1;
+                }
+            }
+            AppAction::ExitBacktest => {
+                self.screen = AppScreen::Main;
+            }
         }
     }
 
@@ -282,6 +373,15 @@ pub enum AppAction {
     ChartMoveCursor(i32),
     ChartZoom(bool),
     ChartChangePeriod(Period),
+    StartBacktest(fa_core::Symbol),
+    RunBacktest,
+    BacktestComplete(BacktestResult),
+    BacktestFailed(String),
+    BacktestNextStrategy,
+    BacktestPrevStrategy,
+    BacktestScrollUp,
+    BacktestScrollDown,
+    ExitBacktest,
 }
 
 #[cfg(test)]
@@ -593,6 +693,52 @@ mod tests {
             assert_eq!(cs.period, Period::Year1);
             assert!(cs.loading);
             assert!(cs.data.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_start_backtest_sets_screen() {
+        use fa_core::{Market, Symbol};
+        let mut s = make_state();
+        let sym = Symbol::new("AAPL", Market::USStock);
+        s.apply(AppAction::StartBacktest(sym.clone()));
+        assert!(matches!(s.screen, AppScreen::Backtest(_)));
+    }
+
+    #[test]
+    fn test_exit_backtest_returns_to_main() {
+        use fa_core::{Market, Symbol};
+        let mut s = make_state();
+        s.apply(AppAction::StartBacktest(Symbol::new("AAPL", Market::USStock)));
+        s.apply(AppAction::ExitBacktest);
+        assert!(matches!(s.screen, AppScreen::Main));
+    }
+
+    #[test]
+    fn test_backtest_next_prev_strategy_wraps() {
+        use fa_core::{Market, Symbol};
+        let mut s = make_state();
+        s.apply(AppAction::StartBacktest(Symbol::new("AAPL", Market::USStock)));
+        if let AppScreen::Backtest(ref bs) = s.screen {
+            assert_eq!(bs.strategy_idx, 0);
+        }
+        s.apply(AppAction::BacktestNextStrategy);
+        if let AppScreen::Backtest(ref bs) = s.screen { assert_eq!(bs.strategy_idx, 1); }
+        s.apply(AppAction::BacktestNextStrategy);
+        if let AppScreen::Backtest(ref bs) = s.screen { assert_eq!(bs.strategy_idx, 2); }
+        s.apply(AppAction::BacktestNextStrategy);
+        if let AppScreen::Backtest(ref bs) = s.screen { assert_eq!(bs.strategy_idx, 0); }
+    }
+
+    #[test]
+    fn test_run_backtest_sets_running_status() {
+        use fa_core::{Market, Symbol};
+        use crate::app::BacktestStatus;
+        let mut s = make_state();
+        s.apply(AppAction::StartBacktest(Symbol::new("AAPL", Market::USStock)));
+        s.apply(AppAction::RunBacktest);
+        if let AppScreen::Backtest(ref bs) = s.screen {
+            assert!(matches!(bs.status, BacktestStatus::Running));
         }
     }
 }
