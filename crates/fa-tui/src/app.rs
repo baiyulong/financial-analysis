@@ -165,8 +165,11 @@ impl State {
             }
             AppAction::ChartZoom(zoom_in) => {
                 if let AppScreen::Chart(ref mut cs) = self.screen {
-                    if zoom_in && cs.bar_width < 8 { cs.bar_width += 1; }
-                    else if !zoom_in && cs.bar_width > 2 { cs.bar_width -= 1; }
+                    if zoom_in {
+                        if cs.bar_width < 8 { cs.bar_width += 1; }
+                    } else if cs.bar_width > 2 {
+                        cs.bar_width -= 1;
+                    }
                 }
             }
             AppAction::ChartChangePeriod(period) => {

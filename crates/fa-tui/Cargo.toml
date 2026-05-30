@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 fa-core      = { path = "../fa-core" }
-fa-indicator = { path = "../fa-indicator" }
+fa-indicator = { path = "../fa-indicator" }  # used in ui/chart.rs (Task 4)
 ratatui      = { workspace = true }
 crossterm    = { workspace = true }
 tokio        = { workspace = true }
