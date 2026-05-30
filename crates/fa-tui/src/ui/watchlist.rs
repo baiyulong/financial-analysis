@@ -80,11 +80,16 @@ fn render_search_overlay(f: &mut Frame, state: &State, area: Rect) {
     }).collect();
 
     let max_items = items.len().min(8) as u16;
+    let available_height = area.height.saturating_sub(4);
+    let overlay_height = (max_items + 2).min(available_height);
+    if overlay_height == 0 {
+        return;
+    }
     let overlay_area = Rect {
         x: area.x + 1,
         y: area.y + 2,
         width: area.width.saturating_sub(2),
-        height: max_items + 2,  // +2 for borders
+        height: overlay_height,
     };
 
     let list = List::new(items)

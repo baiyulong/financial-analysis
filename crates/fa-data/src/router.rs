@@ -8,11 +8,12 @@ use crate::sina::{SinaFinanceProvider, StockSuggestion};
 pub struct ProviderRouter {
     providers: Vec<Arc<dyn DataProvider>>,
     max_retries: u32,
+    search_provider: SinaFinanceProvider,
 }
 
 impl ProviderRouter {
     pub fn new(providers: Vec<Arc<dyn DataProvider>>) -> Self {
-        Self { providers, max_retries: 3 }
+        Self { providers, max_retries: 3, search_provider: SinaFinanceProvider::new() }
     }
 
     fn providers_for(&self, market: &Market) -> Vec<&Arc<dyn DataProvider>> {
@@ -20,8 +21,7 @@ impl ProviderRouter {
     }
 
     pub async fn search_stocks(&self, query: &str) -> Vec<StockSuggestion> {
-        let provider = SinaFinanceProvider::new();
-        provider.search_stocks(query).await.unwrap_or_default()
+        self.search_provider.search_stocks(query).await.unwrap_or_default()
     }
 }
 
@@ -131,6 +131,7 @@ mod tests {
                 Arc::new(AlwaysSucceedProvider),
             ],
             max_retries: 1, // skip retry delay in tests
+            search_provider: SinaFinanceProvider::new(),
         };
         let symbol = Symbol::new("AAPL", Market::USStock);
         let quote = router.fetch_quote(&symbol).await.unwrap();

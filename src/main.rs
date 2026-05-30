@@ -164,7 +164,7 @@ async fn run_app(
                             } else { None }
                         } else { None };
                         let sq = if needs_search && state.is_add_active {
-                            Some(state.add_input.clone())
+                            Some((state.add_input.clone(), state.search_generation))
                         } else { None };
                         (sp, bp, sq, state.should_quit)
                     }; // write lock released here
@@ -209,15 +209,15 @@ async fn run_app(
                         });
                     }
 
-                    if let Some(query) = search_query {
+                    if let Some((query, gen)) = search_query {
                         let tx = tx.clone();
                         if query.is_empty() {
-                            let _ = tx.send(AppAction::SearchResultsUpdated(vec![])).await;
+                            let _ = tx.send(AppAction::SearchResultsUpdated(gen, vec![])).await;
                         } else {
                             let router = Arc::clone(router);
                             tokio::spawn(async move {
                                 let results = router.search_stocks(&query).await;
-                                let _ = tx.send(AppAction::SearchResultsUpdated(results)).await;
+                                let _ = tx.send(AppAction::SearchResultsUpdated(gen, results)).await;
                             });
                         }
                     }

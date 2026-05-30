@@ -32,6 +32,7 @@ pub fn parse_sina_suggest(text: &str) -> Vec<StockSuggestion> {
 pub struct SinaFinanceProvider {
     client: reqwest::Client,
     base_url: String,
+    suggest_base_url: String,
 }
 
 impl SinaFinanceProvider {
@@ -40,7 +41,16 @@ impl SinaFinanceProvider {
     }
 
     pub fn with_base_url(base_url: impl Into<String>) -> Self {
-        Self { client: reqwest::Client::new(), base_url: base_url.into() }
+        Self {
+            client: reqwest::Client::new(),
+            base_url: base_url.into(),
+            suggest_base_url: "https://suggest3.sinajs.cn".to_string(),
+        }
+    }
+
+    pub fn with_suggest_url(mut self, url: impl Into<String>) -> Self {
+        self.suggest_base_url = url.into();
+        self
     }
 
     pub async fn search_stocks(&self, query: &str) -> Result<Vec<StockSuggestion>, DataError> {
@@ -49,8 +59,8 @@ impl SinaFinanceProvider {
         }
         let encoded = urlencoding::encode(query);
         let url = format!(
-            "https://suggest3.sinajs.cn/suggest/type=&key={}&name=&market=&rn=8",
-            encoded
+            "{}/suggest/type=&key={}&name=&market=&rn=8",
+            self.suggest_base_url, encoded
         );
         let resp = self.client
             .get(&url)

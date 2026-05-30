@@ -124,6 +124,7 @@ pub struct State {
     pub add_input: String,
     pub search_results: Vec<StockSuggestion>,
     pub search_selected: usize,
+    pub search_generation: u64,
     pub should_quit: bool,
     pub screen: AppScreen,
 }
@@ -202,11 +203,13 @@ impl State {
             AppAction::UpdateAddInput(c) => {
                 if self.is_add_active {
                     self.add_input.push(c);
+                    self.search_generation = self.search_generation.wrapping_add(1);
                 }
             }
             AppAction::BackspaceAdd => {
                 if self.is_add_active {
                     self.add_input.pop();
+                    self.search_generation = self.search_generation.wrapping_add(1);
                 }
             }
             AppAction::CancelAdd => {
@@ -230,9 +233,11 @@ impl State {
                     self.search_selected = 0;
                 }
             }
-            AppAction::SearchResultsUpdated(results) => {
-                self.search_results = results;
-                self.search_selected = 0;
+            AppAction::SearchResultsUpdated(gen, results) => {
+                if gen == self.search_generation {
+                    self.search_results = results;
+                    self.search_selected = 0;
+                }
             }
             AppAction::SearchSelectNext => {
                 if !self.search_results.is_empty() {
@@ -440,7 +445,7 @@ pub enum AppAction {
     BackspaceAdd,
     CancelAdd,
     ConfirmAdd,
-    SearchResultsUpdated(Vec<StockSuggestion>),
+    SearchResultsUpdated(u64, Vec<StockSuggestion>),
     SearchSelectNext,
     SearchSelectPrev,
     ConfirmSearchSelection,
@@ -971,5 +976,69 @@ mod tests {
         } else {
             panic!("Expected Chart screen");
         }
+    }
+
+    #[test]
+    fn test_search_select_next_wraps() {
+        let mut s = State::default();
+        s.is_add_active = true;
+        s.search_results = vec![
+            fa_data::sina::StockSuggestion { code: "600519".into(), name: "贵州茅台".into() },
+            fa_data::sina::StockSuggestion { code: "000001".into(), name: "平安银行".into() },
+        ];
+        s.search_selected = 1;
+        s.apply(AppAction::SearchSelectNext);
+        assert_eq!(s.search_selected, 0);
+    }
+
+    #[test]
+    fn test_search_select_prev_wraps() {
+        let mut s = State::default();
+        s.is_add_active = true;
+        s.search_results = vec![
+            fa_data::sina::StockSuggestion { code: "600519".into(), name: "A".into() },
+            fa_data::sina::StockSuggestion { code: "000001".into(), name: "B".into() },
+        ];
+        s.search_selected = 0;
+        s.apply(AppAction::SearchSelectPrev);
+        assert_eq!(s.search_selected, 1);
+    }
+
+    #[test]
+    fn test_confirm_search_selection_adds_to_watchlist() {
+        let mut s = State::default();
+        s.is_add_active = true;
+        s.search_results = vec![fa_data::sina::StockSuggestion { code: "600519".into(), name: "贵州茅台".into() }];
+        s.search_selected = 0;
+        s.apply(AppAction::ConfirmSearchSelection);
+        assert!(!s.is_add_active);
+        assert!(s.search_results.is_empty());
+        let added = s.watchlist.last().expect("symbol added");
+        assert_eq!(added.code, "600519");
+        assert_eq!(added.name.as_deref(), Some("贵州茅台"));
+    }
+
+    #[test]
+    fn test_search_generation_increments_on_input() {
+        let mut s = State::default();
+        s.is_add_active = true;
+        let gen_before = s.search_generation;
+        s.apply(AppAction::UpdateAddInput('a'));
+        assert_eq!(s.search_generation, gen_before + 1);
+    }
+
+    #[test]
+    fn test_stale_search_results_discarded() {
+        let mut s = State::default();
+        s.is_add_active = true;
+        s.search_generation = 5;
+        s.apply(AppAction::SearchResultsUpdated(3, vec![
+            fa_data::sina::StockSuggestion { code: "STALE".into(), name: "Stale".into() }
+        ]));
+        assert!(s.search_results.is_empty());
+        s.apply(AppAction::SearchResultsUpdated(5, vec![
+            fa_data::sina::StockSuggestion { code: "600519".into(), name: "茅台".into() }
+        ]));
+        assert_eq!(s.search_results.len(), 1);
     }
 }
