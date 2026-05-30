@@ -1,0 +1,5 @@
+symbol,market,quantity,cost_basis
+AAPL,us,10,1800.00
+TSLA,us,5,1100.00
+600519,a_share,2,3660.00
+BTC-USD,crypto,0.5,25000.00
