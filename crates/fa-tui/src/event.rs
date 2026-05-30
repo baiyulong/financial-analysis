@@ -48,6 +48,8 @@ impl EventHandler {
     }
 
     /// Key mappings for Main screen (watchlist/portfolio mode).
+    ///
+    /// Note: only intended for non-chart, non-add contexts; see `resolve_action` for routing.
     pub fn map_key_main(code: KeyCode, modifiers: KeyModifiers) -> Option<AppAction> {
         match (code, modifiers) {
             (KeyCode::Char('q'), KeyModifiers::NONE) |
@@ -88,6 +90,9 @@ impl EventHandler {
     }
 
     /// Key mappings for Add mode (user is typing a new ticker to add).
+    ///
+    /// Note: Ctrl+C quit is special-cased in `resolve_action` before this
+    /// function is reached, so it is not handled here.
     pub fn map_key_add(code: KeyCode, modifiers: KeyModifiers) -> Option<AppAction> {
         match (code, modifiers) {
             (KeyCode::Enter, _) => Some(AppAction::ConfirmAdd),
@@ -100,10 +105,13 @@ impl EventHandler {
     }
 
     fn resolve_action(state: &State, code: KeyCode, modifiers: KeyModifiers) -> Option<AppAction> {
+        // Always quit on Ctrl+C, regardless of screen or mode.
+        if code == KeyCode::Char('c') && modifiers == KeyModifiers::CONTROL {
+            return Some(AppAction::Quit);
+        }
+
         if matches!(state.screen, AppScreen::Chart(_)) {
             Self::map_key_chart(code, modifiers)
-        } else if code == KeyCode::Char('c') && modifiers == KeyModifiers::CONTROL {
-            Some(AppAction::Quit)
         } else if state.is_add_active {
             Self::map_key_add(code, modifiers)
         } else if !state.is_search_active
@@ -282,6 +290,18 @@ mod tests {
     fn test_resolve_action_ctrlc_always_quits_even_in_add_mode() {
         let mut state = State::default();
         state.is_add_active = true;
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Char('c'), KeyModifiers::CONTROL),
+            Some(AppAction::Quit)
+        ));
+    }
+
+    #[test]
+    fn test_resolve_action_ctrlc_quits_in_chart_mode() {
+        use crate::app::{AppScreen, ChartState};
+        let mut state = State::default();
+        let sym = Symbol::new("AAPL", Market::USStock);
+        state.screen = AppScreen::Chart(ChartState::new(sym, fa_core::Period::Month1));
         assert!(matches!(
             EventHandler::resolve_action(&state, KeyCode::Char('c'), KeyModifiers::CONTROL),
             Some(AppAction::Quit)
