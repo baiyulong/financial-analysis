@@ -189,6 +189,8 @@ impl State {
         }
     }
 
+    /// Returns the symbol currently highlighted in the watchlist.
+    /// Chart entry is always from the watchlist; portfolio symbols are not chartable via Enter.
     pub fn selected_symbol(&self) -> Option<&Symbol> {
         self.watchlist.get(self.selected_watchlist)
     }

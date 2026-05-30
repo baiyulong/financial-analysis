@@ -1,4 +1,5 @@
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use fa_core::Period;
 use tokio::sync::mpsc;
 use std::time::Duration;
 use crate::app::{AppAction, AppScreen, AppState};
@@ -32,20 +33,13 @@ impl EventHandler {
 
             let action: Option<AppAction> = match maybe_ev {
                 Some(Ok(Event::Key(KeyEvent { code, modifiers, .. }))) => {
-                    let is_chart = {
-                        let s = state.read().await;
-                        matches!(s.screen, AppScreen::Chart(_))
-                    };
-                    if is_chart {
+                    let s = state.read().await;
+                    if matches!(s.screen, AppScreen::Chart(_)) {
                         Self::map_key_chart(code, modifiers)
+                    } else if code == KeyCode::Enter && modifiers == KeyModifiers::NONE {
+                        s.selected_symbol().map(|sym| AppAction::EnterChart(sym.clone()))
                     } else {
-                        // Handle Enter key: inject selected symbol from state
-                        if code == KeyCode::Enter && modifiers == KeyModifiers::NONE {
-                            let s = state.read().await;
-                            s.selected_symbol().map(|sym| AppAction::EnterChart(sym.clone()))
-                        } else {
-                            Self::map_key_main(code, modifiers)
-                        }
+                        Self::map_key_main(code, modifiers)
                     }
                 }
                 _ => None,
@@ -84,7 +78,6 @@ impl EventHandler {
 
     /// Key mappings for Chart screen (K-line view mode).
     pub fn map_key_chart(code: KeyCode, modifiers: KeyModifiers) -> Option<AppAction> {
-        use fa_core::Period;
         match (code, modifiers) {
             (KeyCode::Esc, _)                         => Some(AppAction::ExitChart),
             (KeyCode::Left, _)                        => Some(AppAction::ChartMoveCursor(-1)),
@@ -94,7 +87,7 @@ impl EventHandler {
             (KeyCode::Char('1'), KeyModifiers::NONE)  => Some(AppAction::ChartChangePeriod(Period::Day1)),
             (KeyCode::Char('5'), KeyModifiers::NONE)  => Some(AppAction::ChartChangePeriod(Period::Week1)),
             (KeyCode::Char('m'), KeyModifiers::NONE)  => Some(AppAction::ChartChangePeriod(Period::Month1)),
-            (KeyCode::Char('q'), KeyModifiers::NONE)  => Some(AppAction::ChartChangePeriod(Period::Month3)),
+            (KeyCode::Char('q'), KeyModifiers::NONE)  => Some(AppAction::ChartChangePeriod(Period::Month3)), // 'q' = quarter (3 months)
             (KeyCode::Char('y'), KeyModifiers::NONE)  => Some(AppAction::ChartChangePeriod(Period::Year1)),
             _ => None,
         }
@@ -190,5 +183,11 @@ mod tests {
             EventHandler::map_key_chart(KeyCode::Esc, KeyModifiers::NONE),
             Some(AppAction::ExitChart)
         ));
+    }
+
+    #[test]
+    fn test_map_key_chart_unknown_key_returns_none() {
+        assert!(EventHandler::map_key_chart(KeyCode::F(12), KeyModifiers::NONE).is_none());
+        assert!(EventHandler::map_key_chart(KeyCode::Tab, KeyModifiers::NONE).is_none());
     }
 }
