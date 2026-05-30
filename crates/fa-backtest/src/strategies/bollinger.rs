@@ -3,12 +3,14 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::{ToPrimitive, FromPrimitive};
 
 pub struct BollingerStrategy {
-    pub period: usize,
-    pub std_dev: f64,
+    period: usize,
+    std_dev: f64,
 }
 
 impl BollingerStrategy {
     pub fn new(period: usize, std_dev: f64) -> Self {
+        assert!(period >= 2, "Bollinger period must be at least 2");
+        assert!(std_dev > 0.0, "std_dev multiplier must be positive");
         Self { period, std_dev }
     }
 }
@@ -19,13 +21,14 @@ impl Strategy for BollingerStrategy {
     fn on_bar(&mut self, ctx: &BarContext) -> Signal {
         let history = ctx.history;
         if history.len() < self.period { return Signal::Hold; }
+        if self.period < 2 { return Signal::Hold; }
 
         let window = &history[history.len() - self.period..];
         let closes_f64: Vec<f64> = window.iter()
             .map(|b| b.close.to_f64().unwrap_or(0.0))
             .collect();
         let mean = closes_f64.iter().sum::<f64>() / self.period as f64;
-        let variance = closes_f64.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / self.period as f64;
+        let variance = closes_f64.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / (self.period - 1) as f64;
         let std = variance.sqrt();
 
         let upper = Decimal::from_f64(mean + self.std_dev * std).unwrap_or(Decimal::MAX);

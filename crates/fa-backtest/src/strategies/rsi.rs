@@ -1,16 +1,17 @@
 use crate::strategy::{BarContext, Signal, Strategy};
 use fa_indicator::rsi;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::FromPrimitive;
 
 pub struct RsiStrategy {
-    pub period: usize,
-    pub oversold: u32,   // e.g. 30
-    pub overbought: u32, // e.g. 70
+    period: usize,
+    oversold: u32,   // e.g. 30
+    overbought: u32, // e.g. 70
 }
 
 impl RsiStrategy {
     pub fn new(period: usize, oversold: u32, overbought: u32) -> Self {
+        assert!(period > 0, "RSI period must be positive");
+        assert!(oversold < overbought, "oversold threshold must be less than overbought");
         Self { period, oversold, overbought }
     }
 }

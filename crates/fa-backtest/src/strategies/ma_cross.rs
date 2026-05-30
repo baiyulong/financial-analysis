@@ -2,12 +2,14 @@ use crate::strategy::{BarContext, Signal, Strategy};
 use fa_indicator::sma;
 
 pub struct MaCrossStrategy {
-    pub fast: usize,
-    pub slow: usize,
+    fast: usize,
+    slow: usize,
 }
 
 impl MaCrossStrategy {
     pub fn new(fast: usize, slow: usize) -> Self {
+        assert!(fast > 0 && slow > 0, "MA periods must be positive");
+        assert!(fast < slow, "fast period must be less than slow period");
         Self { fast, slow }
     }
 }
@@ -17,19 +19,19 @@ impl Strategy for MaCrossStrategy {
 
     fn on_bar(&mut self, ctx: &BarContext) -> Signal {
         let history = ctx.history;
-        // Need at least slow+1 bars to detect a crossover (compare prev and curr MA)
         if history.len() < self.slow + 1 {
             return Signal::Hold;
         }
-        let fast_vals = sma(history, self.fast);
-        let slow_vals = sma(history, self.slow);
-        let n = history.len();
-        match (fast_vals[n - 2], slow_vals[n - 2], fast_vals[n - 1], slow_vals[n - 1]) {
+        let tail = &history[history.len() - (self.slow + 1)..];
+        let fast_vals = sma(tail, self.fast);
+        let slow_vals = sma(tail, self.slow);
+        match (fast_vals[self.slow - 1], slow_vals[self.slow - 1],
+               fast_vals[self.slow],     slow_vals[self.slow]) {
             (Some(pf), Some(ps), Some(cf), Some(cs)) => {
-                if pf < ps && cf >= cs && ctx.position == 0 {
-                    Signal::BuyAll  // golden cross
-                } else if pf >= ps && cf < cs && ctx.position > 0 {
-                    Signal::SellAll // death cross
+                if pf < ps && cf > cs && ctx.position == 0 {
+                    Signal::BuyAll  // golden cross: was below, now strictly above
+                } else if pf > ps && cf < cs && ctx.position > 0 {
+                    Signal::SellAll // death cross: was strictly above, now below
                 } else {
                     Signal::Hold
                 }
@@ -68,6 +70,16 @@ mod tests {
         let mut s = MaCrossStrategy::new(2, 3);
         // prev: fast(10+10)/2=10, slow(10+10+10)/3=10 → pf==ps, not pf<ps → Hold
         assert_eq!(s.on_bar(&ctx(&history, 0)), Signal::Hold);
+    }
+
+    #[test]
+    fn test_genuine_golden_cross_emits_buy_all() {
+        // [10, 8, 9, 15] with fast=2, slow=3:
+        // prev: fast(8+9)/2=8.5, slow(10+8+9)/3=9.0 → pf < ps ✓
+        // curr: fast(9+15)/2=12, slow(8+9+15)/3=10.67 → cf > cs ✓ → BuyAll
+        let history = vec![bar(10.0), bar(8.0), bar(9.0), bar(15.0)];
+        let mut s = MaCrossStrategy::new(2, 3);
+        assert_eq!(s.on_bar(&ctx(&history, 0)), Signal::BuyAll);
     }
 
     #[test]
