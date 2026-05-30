@@ -231,6 +231,12 @@ impl State {
             AppAction::QuotesUpdated(quotes) => {
                 self.last_updated = Some(Utc::now());
                 for q in quotes {
+                    // Propagate name from quote to the symbol in watchlist
+                    if let Some(ref name) = q.name {
+                        if let Some(sym) = self.watchlist.iter_mut().find(|s| s.code == q.symbol.code) {
+                            sym.name = Some(name.clone());
+                        }
+                    }
                     self.quotes.insert(q.symbol.code.clone(), q);
                 }
             }
@@ -277,6 +283,16 @@ impl State {
                     cs.period = period;
                     cs.loading = true;
                     cs.data.clear();
+                }
+            }
+            AppAction::ChartLoadMoreHistory => {
+                if let AppScreen::Chart(ref mut cs) = self.screen {
+                    if let Some(longer) = next_longer_period(&cs.period) {
+                        cs.period = longer;
+                        cs.loading = true;
+                        cs.data.clear();
+                        cs.cursor = 0;
+                    }
                 }
             }
             AppAction::StartBacktest(sym) => {
@@ -347,6 +363,19 @@ impl State {
 
 pub type AppState = Arc<RwLock<State>>;
 
+/// Returns the next longer time period, or None if already at the maximum.
+pub fn next_longer_period(p: &Period) -> Option<Period> {
+    match p {
+        Period::Day1   => Some(Period::Week1),
+        Period::Week1  => Some(Period::Month1),
+        Period::Month1 => Some(Period::Month3),
+        Period::Month3 => Some(Period::Month6),
+        Period::Month6 => Some(Period::Year1),
+        Period::Year1  => Some(Period::Year5),
+        Period::Year5  => None,
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum AppAction {
     Quit,
@@ -372,6 +401,7 @@ pub enum AppAction {
     ChartMoveCursor(i32),
     ChartZoom(bool),
     ChartChangePeriod(Period),
+    ChartLoadMoreHistory,
     StartBacktest(fa_core::Symbol),
     RunBacktest,
     BacktestComplete(BacktestResult),

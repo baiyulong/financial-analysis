@@ -29,10 +29,12 @@ pub fn render(f: &mut Frame, state: &State, area: Rect) {
             ("--".into(), "".into(), Color::Gray)
         };
 
+        let name_str = sym.name.as_deref().unwrap_or("");
         let line = Line::from(vec![
-            Span::raw(format!("{:<8}", sym.code)),
-            Span::styled(format!("{:>10}", price_str), Style::default().fg(color)),
-            Span::styled(format!("  {:>16}", change_str), Style::default().fg(color)),
+            Span::raw(format!("{:<6}", sym.display_code())),
+            Span::raw(format!(" {:<8}", name_str.chars().take(4).collect::<String>())),  // max 4 Chinese chars
+            Span::styled(format!("{:>8}", price_str), Style::default().fg(color)),
+            Span::styled(format!("  {:>12}", change_str), Style::default().fg(color)),
         ]);
         ListItem::new(line)
     }).collect();
@@ -110,5 +112,25 @@ mod tests {
         let content: String = buf.content().iter().map(|c| c.symbol()).collect();
         assert!(content.contains("TSLA"), "should show add input in title");
         assert!(content.contains("Add:"), "should show 'Add:' label");
+    }
+
+    #[test]
+    fn test_render_with_symbol_name() {
+        let backend = TestBackend::new(80, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = State::default();
+        let mut sym = Symbol::new("sh600519", Market::AShare);
+        sym.name = Some("贵州茅台".into());
+        state.watchlist.push(sym);
+
+        terminal.draw(|f| {
+            render(f, &state, f.area());
+        }).unwrap();
+
+        let buf = terminal.backend().buffer().clone();
+        let content: String = buf.content().iter().map(|c| c.symbol()).collect();
+        assert!(content.contains("600519"), "should show display code");
+        // Wide CJK chars have a space inserted after each in terminal buffer cells
+        assert!("贵州茅台".chars().all(|c| content.contains(c)), "should show stock name");
     }
 }
