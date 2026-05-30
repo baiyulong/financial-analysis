@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 fa-core      = { path = "../fa-core" }
-fa-indicator = { path = "../fa-indicator" }
 chrono       = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }

@@ -13,8 +13,20 @@ pub struct BarContext<'a> {
     pub history: &'a [OHLCV],
 }
 
+impl<'a> BarContext<'a> {
+    pub fn new(history: &'a [OHLCV], position: i64, cash: Decimal) -> Self {
+        assert!(!history.is_empty(), "BarContext requires at least one bar");
+        Self {
+            bar: history.last().unwrap(),
+            history,
+            position,
+            cash,
+        }
+    }
+}
+
 /// What the strategy wants to do after seeing a bar.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Signal {
     /// Buy with all available cash at this bar's fill price.
     BuyAll,
@@ -29,7 +41,8 @@ pub trait Strategy: Send {
     fn name(&self) -> &str;
     fn on_bar(&mut self, ctx: &BarContext) -> Signal;
     /// Called before each new Engine::run() so the same instance can be reused.
-    fn reset(&mut self);
+    /// Default: no-op for stateless strategies.
+    fn reset(&mut self) {}
 }
 
 #[cfg(test)]
@@ -39,13 +52,11 @@ mod tests {
     use rust_decimal_macros::dec;
     use chrono::Utc;
 
-    fn make_bar(close: f64) -> OHLCV {
-        use rust_decimal::Decimal;
-        let c = Decimal::from_f64_retain(close).unwrap();
+    fn make_bar(close: Decimal) -> OHLCV {
         OHLCV {
             symbol: Symbol::new("TEST", Market::USStock),
             timestamp: Utc::now(),
-            open: c, high: c, low: c, close: c, volume: 0,
+            open: close, high: close, low: close, close, volume: 0,
         }
     }
 
@@ -55,12 +66,11 @@ mod tests {
         fn on_bar(&mut self, ctx: &BarContext) -> Signal {
             if ctx.position == 0 { Signal::BuyAll } else { Signal::Hold }
         }
-        fn reset(&mut self) {}
     }
 
     #[test]
     fn test_strategy_trait_object() {
-        let bar = make_bar(100.0);
+        let bar = make_bar(dec!(100));
         let history = vec![bar.clone()];
         let ctx = BarContext { bar: &bar, position: 0, cash: dec!(1000), history: &history };
         let mut s: Box<dyn Strategy> = Box::new(AlwaysBuy);
@@ -69,7 +79,7 @@ mod tests {
 
     #[test]
     fn test_signal_hold_when_in_position() {
-        let bar = make_bar(100.0);
+        let bar = make_bar(dec!(100));
         let history = vec![bar.clone()];
         let ctx = BarContext { bar: &bar, position: 10, cash: dec!(0), history: &history };
         let mut s = AlwaysBuy;
