@@ -1,16 +1,125 @@
 use fa_core::Period;
 use fa_indicator::sma;
 use ratatui::{
+    buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    widgets::{
-        canvas::{Canvas, Line as CanvasLine, Rectangle},
-        Block, Borders, Paragraph,
-    },
+    widgets::{Block, Borders, Paragraph, Widget},
     Frame,
 };
-use rust_decimal::prelude::ToPrimitive;
 use crate::app::ChartState;
+
+struct KlineChart<'a> {
+    visible: &'a [fa_core::OHLCV],
+    y_min: f64,
+    y_max: f64,
+    bar_w: u16,
+    cursor_in_view: usize,
+    /// Pre-sliced to visible range: ma_data[k].1[i] corresponds to visible[i]
+    ma_data: Vec<(Color, Vec<Option<rust_decimal::Decimal>>)>,
+}
+
+impl Widget for KlineChart<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let block = Block::default().borders(Borders::ALL);
+        let inner = block.inner(area);
+        block.render(area, buf);
+
+        if inner.height == 0 || inner.width == 0 {
+            return;
+        }
+
+        let h = inner.height;
+        let w = inner.width;
+
+        // ── Pass 1: Candlestick bars ──────────────────────────────────────
+        for (i, bar) in self.visible.iter().enumerate() {
+            use rust_decimal::prelude::ToPrimitive;
+            let x_off = (i as u16) * self.bar_w;
+            if x_off >= w {
+                break;
+            }
+
+            let open     = bar.open.to_f64().unwrap_or(self.y_min);
+            let close    = bar.close.to_f64().unwrap_or(self.y_min);
+            let body_top = open.max(close);
+            let body_bot = open.min(close);
+            let high     = bar.high.to_f64().unwrap_or(body_top);
+            let low      = bar.low.to_f64().unwrap_or(body_bot);
+            let color    = if close >= open { Color::Red } else { Color::Green };
+
+            let high_row     = price_to_row(high,     self.y_min, self.y_max, h);
+            let low_row      = price_to_row(low,      self.y_min, self.y_max, h);
+            let top_body_row = price_to_row(body_top, self.y_min, self.y_max, h);
+            let bot_body_row = price_to_row(body_bot, self.y_min, self.y_max, h);
+
+            let center_col = inner.x + x_off + self.bar_w / 2;
+            // Body occupies columns [x_off+1 .. x_off+bar_w-2], 1-cell margin each side
+            let body_left  = inner.x + x_off + 1;
+            let body_right = (inner.x + x_off + self.bar_w).saturating_sub(2);
+            let max_col    = inner.x + w - 1;
+
+            // Upper wick (high → top of body)
+            for r in high_row..top_body_row {
+                if center_col <= max_col {
+                    buf[(center_col, inner.y + r)].set_char('│').set_fg(color);
+                }
+            }
+
+            // Body (top_body_row ..= bot_body_row)
+            for r in top_body_row..=bot_body_row {
+                let y = inner.y + r;
+                for col in body_left..=body_right.min(max_col) {
+                    buf[(col, y)].set_char('█').set_fg(color);
+                }
+                // When bar_w <= 2 the body margins may leave center_col uncovered
+                if (center_col < body_left || center_col > body_right) && center_col <= max_col {
+                    buf[(center_col, y)].set_char('█').set_fg(color);
+                }
+            }
+
+            // Lower wick (below body → low)
+            if bot_body_row < low_row {
+                for r in (bot_body_row + 1)..=low_row {
+                    if center_col <= max_col {
+                        buf[(center_col, inner.y + r)].set_char('│').set_fg(color);
+                    }
+                }
+            }
+        }
+
+        // ── Pass 2: MA overlay (─ dot at price row for each bar) ─────────
+        for (color, vis_ma) in &self.ma_data {
+            for (i, v) in vis_ma.iter().enumerate() {
+                use rust_decimal::prelude::ToPrimitive;
+                if let Some(price) = v.and_then(|d| d.to_f64()) {
+                    let x_off = (i as u16) * self.bar_w;
+                    if x_off >= w {
+                        break;
+                    }
+                    let center_col = inner.x + x_off + self.bar_w / 2;
+                    let row = price_to_row(price, self.y_min, self.y_max, h);
+                    if center_col < inner.x + w {
+                        buf[(center_col, inner.y + row)].set_char('─').set_fg(*color);
+                    }
+                }
+            }
+        }
+
+        // ── Pass 3: Cursor column highlight (DarkGray bg on center col) ──
+        if self.cursor_in_view < self.visible.len() {
+            let x_off = (self.cursor_in_view as u16) * self.bar_w;
+            if x_off < w {
+                let center_col = inner.x + x_off + self.bar_w / 2;
+                if center_col < inner.x + w {
+                    for r in 0..h {
+                        buf[(center_col, inner.y + r)].set_bg(Color::DarkGray);
+                    }
+                }
+            }
+        }
+    }
+}
 
 pub fn render(f: &mut Frame, cs: &ChartState, area: Rect) {
     let chunks = Layout::default()
@@ -52,6 +161,17 @@ fn render_titlebar(f: &mut Frame, cs: &ChartState, area: Rect) {
     );
 }
 
+/// Maps a price value to a buffer row index within [0, height).
+/// y_max → row 0 (top of chart), y_min → row height-1 (bottom).
+fn price_to_row(price: f64, y_min: f64, y_max: f64, height: u16) -> u16 {
+    if y_max <= y_min || height == 0 {
+        return 0;
+    }
+    let ratio = (y_max - price) / (y_max - y_min);
+    let row = (ratio * height as f64) as u16;
+    row.min(height.saturating_sub(1))
+}
+
 fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
     if cs.loading || cs.data.is_empty() {
         let msg = if cs.loading { "Loading data..." } else { "No data available" };
@@ -64,9 +184,10 @@ fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
         return;
     }
 
-    let chart_inner_width = area.width.saturating_sub(8) as usize;
+    // Inner width (minus 2 border chars) determines how many bars fit
+    let inner_w = area.width.saturating_sub(2) as usize;
     let bar_w = cs.bar_width as usize;
-    let max_visible = (chart_inner_width / bar_w).max(1);
+    let max_visible = (inner_w / bar_w).max(1);
 
     let half = max_visible / 2;
     let end = (cs.cursor + half + 1).min(cs.data.len());
@@ -75,83 +196,33 @@ fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
     let visible = &cs.data[start..end];
 
     let price_min = visible.iter()
-        .filter_map(|b| b.low.to_f64())
+        .filter_map(|b| { use rust_decimal::prelude::ToPrimitive; b.low.to_f64() })
         .fold(f64::MAX, f64::min);
     let price_max = visible.iter()
-        .filter_map(|b| b.high.to_f64())
+        .filter_map(|b| { use rust_decimal::prelude::ToPrimitive; b.high.to_f64() })
         .fold(f64::MIN, f64::max);
 
     let padding = ((price_max - price_min) * 0.05).max(0.01);
     let y_min = price_min - padding;
     let y_max = price_max + padding;
-    let x_max = (visible.len() * bar_w) as f64;
 
     let ma_configs: &[(usize, Color)] = &[(5, Color::Yellow), (10, Color::Cyan), (20, Color::Magenta)];
     let cursor_in_view = cs.cursor.saturating_sub(start);
 
-    // Pre-compute MA values outside the paint closure to avoid per-frame allocation
+    // Pre-slice MA to visible window to keep Widget stateless
     let ma_data: Vec<(Color, Vec<Option<rust_decimal::Decimal>>)> = ma_configs.iter()
         .filter(|&&(period, _)| cs.ma_periods.contains(&period))
-        .map(|&(period, color)| (color, sma(&cs.data, period)))
+        .map(|&(period, color)| {
+            let all_ma = sma(&cs.data, period);
+            let vis_ma = if all_ma.len() >= end { all_ma[start..end].to_vec() } else { vec![] };
+            (color, vis_ma)
+        })
         .collect();
 
-    let canvas = Canvas::default()
-        .block(Block::default().borders(Borders::ALL))
-        .x_bounds([0.0, x_max])
-        .y_bounds([y_min, y_max])
-        .paint(|ctx| {
-            // Pass 1: K-line bodies and wicks
-            for (i, bar) in visible.iter().enumerate() {
-                let x_center = i as f64 * bar_w as f64 + bar_w as f64 / 2.0;
-                let open  = bar.open.to_f64().unwrap_or(y_min);
-                let close = bar.close.to_f64().unwrap_or(y_min);
-                let body_top = open.max(close);
-                let body_bot = open.min(close);
-                let high  = bar.high.to_f64().unwrap_or(body_top);
-                let low   = bar.low.to_f64().unwrap_or(body_bot);
-                let color = if close >= open { Color::Red } else { Color::Green };
-
-                ctx.draw(&CanvasLine { x1: x_center, y1: body_top, x2: x_center, y2: high, color });
-                ctx.draw(&CanvasLine { x1: x_center, y1: low, x2: x_center, y2: body_bot, color });
-                ctx.draw(&Rectangle {
-                    x: i as f64 * bar_w as f64,
-                    y: body_bot,
-                    width: (bar_w as f64 - 0.5).max(0.5),
-                    height: (body_top - body_bot).max(0.05 * (y_max - y_min)),
-                    color,
-                });
-            }
-
-            // Pass 2: MA overlay lines
-            for (color, all_ma) in &ma_data {
-                if all_ma.len() < end { continue; } // skip this MA only, not the closure
-                let vis_ma = &all_ma[start..end];
-                let mut prev: Option<(f64, f64)> = None;
-                for (i, v) in vis_ma.iter().enumerate() {
-                    if let Some(y) = v.and_then(|d| d.to_f64()) {
-                        let x = i as f64 * bar_w as f64 + bar_w as f64 / 2.0;
-                        if let Some((px, py)) = prev {
-                            ctx.draw(&CanvasLine { x1: px, y1: py, x2: x, y2: y, color: *color });
-                        }
-                        prev = Some((x, y));
-                    } else {
-                        prev = None;
-                    }
-                }
-            }
-
-            // Pass 3: Cursor crosshair — drawn last so it appears on top
-            if cursor_in_view < visible.len() {
-                let x_center = cursor_in_view as f64 * bar_w as f64 + bar_w as f64 / 2.0;
-                ctx.draw(&CanvasLine {
-                    x1: x_center, y1: y_min,
-                    x2: x_center, y2: y_max,
-                    color: Color::White,
-                });
-            }
-        });
-
-    f.render_widget(canvas, area);
+    f.render_widget(
+        KlineChart { visible, y_min, y_max, bar_w: cs.bar_width, cursor_in_view, ma_data },
+        area,
+    );
 }
 
 fn render_cursor_info(f: &mut Frame, cs: &ChartState, area: Rect) {
@@ -215,6 +286,15 @@ mod tests {
             ma_periods: vec![],
             loading: false,
         }
+    }
+
+    #[test]
+    fn test_price_to_row() {
+        assert_eq!(price_to_row(150.0, 100.0, 200.0, 10), 5);
+        assert_eq!(price_to_row(200.0, 100.0, 200.0, 10), 0);
+        assert_eq!(price_to_row(100.0, 100.0, 200.0, 10), 9);
+        assert_eq!(price_to_row(250.0, 100.0, 200.0, 10), 0);
+        assert_eq!(price_to_row(100.0, 100.0, 100.0, 10), 0);
     }
 
     #[test]
