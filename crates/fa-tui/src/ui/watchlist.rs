@@ -1,0 +1,90 @@
+// crates/fa-tui/src/ui/watchlist.rs
+use ratatui::{
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, List, ListItem, ListState},
+    Frame,
+};
+use crate::app::{FocusedPanel, State};
+
+pub fn render(f: &mut Frame, state: &State, area: Rect) {
+    let focused = state.focused_panel == FocusedPanel::Watchlist;
+    let border_style = if focused {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let items: Vec<ListItem> = state.watchlist.iter().map(|sym| {
+        let quote = state.quotes.get(&sym.code);
+        let (price_str, change_str, color) = if let Some(q) = quote {
+            let color = if q.is_positive() { Color::Green } else { Color::Red };
+            (
+                format!("{:.2}", q.price),
+                q.change_display(),
+                color,
+            )
+        } else {
+            ("--".into(), "".into(), Color::Gray)
+        };
+
+        let line = Line::from(vec![
+            Span::raw(format!("{:<8}", sym.code)),
+            Span::styled(format!("{:>10}", price_str), Style::default().fg(color)),
+            Span::styled(format!("  {:>16}", change_str), Style::default().fg(color)),
+        ]);
+        ListItem::new(line)
+    }).collect();
+
+    let list = List::new(items)
+        .block(Block::default().title(" Watchlist ").borders(Borders::ALL).border_style(border_style))
+        .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+        .highlight_symbol("► ");
+
+    let mut list_state = ListState::default();
+    if !state.watchlist.is_empty() {
+        list_state.select(Some(state.selected_watchlist));
+    }
+
+    f.render_stateful_widget(list, area, &mut list_state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::State;
+    use fa_core::{Market, Symbol};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    #[test]
+    fn test_render_empty_watchlist() {
+        let backend = TestBackend::new(60, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let state = State::default();
+
+        terminal.draw(|f| {
+            render(f, &state, f.area());
+        }).unwrap();
+
+        let buf = terminal.backend().buffer().clone();
+        let content: String = buf.content().iter().map(|c| c.symbol()).collect();
+        assert!(content.contains("Watchlist"));
+    }
+
+    #[test]
+    fn test_render_with_symbols() {
+        let backend = TestBackend::new(80, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = State::default();
+        state.watchlist.push(Symbol::new("AAPL", Market::USStock));
+
+        terminal.draw(|f| {
+            render(f, &state, f.area());
+        }).unwrap();
+
+        let buf = terminal.backend().buffer().clone();
+        let content: String = buf.content().iter().map(|c| c.symbol()).collect();
+        assert!(content.contains("AAPL"));
+    }
+}
