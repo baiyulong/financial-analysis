@@ -1,0 +1,12 @@
+[package]
+name = "fa-indicator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fa-core          = { path = "../fa-core" }
+rust_decimal     = { workspace = true }
+rust_decimal_macros = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true }

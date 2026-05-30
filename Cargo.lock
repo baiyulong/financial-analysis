@@ -416,6 +416,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fa-indicator"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "fa-core",
+ "rust_decimal",
+ "rust_decimal_macros",
+]
+
+[[package]]
 name = "fa-tui"
 version = "0.1.0"
 dependencies = [
@@ -439,10 +449,13 @@ name = "financial-analysis"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crossterm",
  "dirs",
  "fa-core",
  "fa-data",
  "fa-tui",
+ "ratatui",
+ "rust_decimal",
  "serde",
  "tokio",
  "toml",
