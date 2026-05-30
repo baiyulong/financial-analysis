@@ -44,6 +44,9 @@ pub struct ChartState {
     pub bar_width: u16,
     pub ma_periods: Vec<usize>,
     pub loading: bool,
+    /// Set by `ChartLoadMoreHistory` so that `ChartDataLoaded` can place
+    /// the cursor at the oldest bar (index 0) instead of the newest.
+    pub is_load_more: bool,
 }
 
 impl ChartState {
@@ -56,6 +59,7 @@ impl ChartState {
             bar_width: 3,
             ma_periods: vec![5, 10, 20],
             loading: true,
+            is_load_more: false,
         }
     }
 
@@ -256,10 +260,12 @@ impl State {
             }
             AppAction::ChartDataLoaded(data) => {
                 if let AppScreen::Chart(ref mut cs) = self.screen {
+                    let was_load_more = cs.is_load_more;
                     let len = data.len();
                     cs.data = data;
-                    cs.cursor = len.saturating_sub(1);
+                    cs.cursor = if was_load_more { 0 } else { len.saturating_sub(1) };
                     cs.loading = false;
+                    cs.is_load_more = false;
                 }
             }
             AppAction::ChartMoveCursor(delta) => {
@@ -294,6 +300,7 @@ impl State {
                         cs.loading = true;
                         cs.data.clear();
                         cs.cursor = 0;
+                        cs.is_load_more = true;
                     }
                 }
             }
@@ -683,6 +690,7 @@ mod tests {
             bar_width: 3,
             ma_periods: vec![5],
             loading: false,
+            is_load_more: false,
         });
         s.apply(AppAction::ChartMoveCursor(-1));
         if let AppScreen::Chart(ref cs) = s.screen { assert_eq!(cs.cursor, 0); }
@@ -718,6 +726,7 @@ mod tests {
             bar_width: 3,
             ma_periods: vec![5],
             loading: false,
+            is_load_more: false,
         });
         s.apply(AppAction::ChartChangePeriod(Period::Year1));
         if let AppScreen::Chart(ref cs) = s.screen {
@@ -823,5 +832,100 @@ mod tests {
         };
         s.apply(AppAction::QuotesUpdated(vec![q_no_name]));
         assert_eq!(s.watchlist[0].name, Some("贵州茅台".to_string()), "None update must not overwrite cached name");
+    }
+
+    fn make_dummy_ohlcv(symbol: Symbol, count: usize) -> Vec<fa_core::OHLCV> {
+        use chrono::Utc;
+        use rust_decimal_macros::dec;
+        (0..count).map(|i| fa_core::OHLCV {
+            symbol: symbol.clone(),
+            timestamp: Utc::now() - chrono::Duration::days((count - i) as i64),
+            open: dec!(100),
+            high: dec!(105),
+            low: dec!(95),
+            close: dec!(102),
+            volume: 1000,
+        }).collect()
+    }
+
+    #[test]
+    fn test_next_longer_period_full_chain() {
+        use fa_core::Period;
+        assert_eq!(next_longer_period(&Period::Day1),   Some(Period::Week1));
+        assert_eq!(next_longer_period(&Period::Week1),  Some(Period::Month1));
+        assert_eq!(next_longer_period(&Period::Month1), Some(Period::Month3));
+        assert_eq!(next_longer_period(&Period::Month3), Some(Period::Month6));
+        assert_eq!(next_longer_period(&Period::Month6), Some(Period::Year1));
+        assert_eq!(next_longer_period(&Period::Year1),  Some(Period::Year5));
+        assert_eq!(next_longer_period(&Period::Year5),  None);
+    }
+
+    #[test]
+    fn test_chart_load_more_history_upgrades_period_and_resets() {
+        use fa_core::{Market, Period};
+        let mut s = State::default();
+        s.screen = AppScreen::Chart(ChartState::new(Symbol::new("AAPL", Market::USStock), Period::Day1));
+        if let AppScreen::Chart(ref mut cs) = s.screen {
+            cs.cursor = 0;
+            cs.loading = false;
+        }
+        s.apply(AppAction::ChartLoadMoreHistory);
+        if let AppScreen::Chart(ref cs) = s.screen {
+            assert_eq!(cs.period, Period::Week1);
+            assert!(cs.loading);
+            assert!(cs.data.is_empty());
+            assert_eq!(cs.cursor, 0);
+        } else {
+            panic!("Expected Chart screen");
+        }
+    }
+
+    #[test]
+    fn test_chart_load_more_history_noop_at_max_period() {
+        use fa_core::{Market, Period};
+        let mut s = State::default();
+        s.screen = AppScreen::Chart(ChartState::new(Symbol::new("AAPL", Market::USStock), Period::Year5));
+        if let AppScreen::Chart(ref mut cs) = s.screen {
+            cs.loading = false;
+        }
+        s.apply(AppAction::ChartLoadMoreHistory);
+        if let AppScreen::Chart(ref cs) = s.screen {
+            assert_eq!(cs.period, Period::Year5);
+            assert!(!cs.loading);
+        } else {
+            panic!("Expected Chart screen");
+        }
+    }
+
+    #[test]
+    fn test_chart_data_loaded_load_more_keeps_cursor_at_start() {
+        use fa_core::{Market, Period};
+        let mut s = State::default();
+        let sym = Symbol::new("AAPL", Market::USStock);
+        s.screen = AppScreen::Chart(ChartState::new(sym.clone(), Period::Day1));
+        s.apply(AppAction::ChartLoadMoreHistory);
+        let dummy_ohlcv = make_dummy_ohlcv(sym.clone(), 50);
+        s.apply(AppAction::ChartDataLoaded(dummy_ohlcv));
+        if let AppScreen::Chart(ref cs) = s.screen {
+            assert_eq!(cs.cursor, 0, "load-more should leave cursor at oldest bar");
+            assert!(!cs.loading);
+        } else {
+            panic!("Expected Chart screen");
+        }
+    }
+
+    #[test]
+    fn test_chart_data_loaded_normal_sets_cursor_to_newest() {
+        use fa_core::{Market, Period};
+        let mut s = State::default();
+        let sym = Symbol::new("AAPL", Market::USStock);
+        s.screen = AppScreen::Chart(ChartState::new(sym.clone(), Period::Month1));
+        let dummy_ohlcv = make_dummy_ohlcv(sym.clone(), 30);
+        s.apply(AppAction::ChartDataLoaded(dummy_ohlcv));
+        if let AppScreen::Chart(ref cs) = s.screen {
+            assert_eq!(cs.cursor, 29, "normal load should place cursor at newest bar");
+        } else {
+            panic!("Expected Chart screen");
+        }
     }
 }

@@ -123,18 +123,14 @@ impl EventHandler {
             return Some(AppAction::Quit);
         }
 
-        if matches!(state.screen, AppScreen::Chart(_)) {
-            // Special case: left arrow at cursor==0 loads longer history
-            if code == KeyCode::Left {
-                if let AppScreen::Chart(ref cs) = state.screen {
-                    if cs.cursor == 0 {
-                        return if next_longer_period(&cs.period).is_some() {
-                            Some(AppAction::ChartLoadMoreHistory)
-                        } else {
-                            Some(AppAction::StatusMessage("已加载最长历史数据".into()))
-                        };
-                    }
-                }
+        if let AppScreen::Chart(ref cs) = state.screen {
+            // Special case: left arrow at cursor==0 loads longer history (only when not loading)
+            if code == KeyCode::Left && cs.cursor == 0 && !cs.loading {
+                return if next_longer_period(&cs.period).is_some() {
+                    Some(AppAction::ChartLoadMoreHistory)
+                } else {
+                    Some(AppAction::StatusMessage("已加载最长历史数据".into()))
+                };
             }
             Self::map_key_chart(code, modifiers)
         } else if matches!(state.screen, AppScreen::Backtest(_)) {

@@ -311,6 +311,7 @@ mod tests {
             bar_width: 3,
             ma_periods: vec![],
             loading: false,
+            is_load_more: false,
         }
     }
 
