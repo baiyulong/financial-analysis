@@ -1,0 +1,21 @@
+{
+  "quoteResponse": {
+    "result": [{
+      "symbol": "AAPL",
+      "longName": "Apple Inc.",
+      "regularMarketPrice": 185.20,
+      "regularMarketChange": 2.20,
+      "regularMarketChangePercent": 1.20,
+      "regularMarketOpen": 183.50,
+      "regularMarketDayHigh": 186.10,
+      "regularMarketDayLow": 182.90,
+      "regularMarketVolume": 52300000,
+      "marketCap": 2870000000000.0,
+      "trailingPE": 28.5,
+      "fiftyTwoWeekHigh": 198.23,
+      "fiftyTwoWeekLow": 124.17,
+      "regularMarketTime": 1706000000
+    }],
+    "error": null
+  }
+}
