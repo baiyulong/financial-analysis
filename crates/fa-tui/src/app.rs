@@ -124,6 +124,8 @@ impl State {
                 }
             }
             AppAction::StartSearch => {
+                self.is_add_active = false;
+                self.add_input.clear();
                 self.is_search_active = true;
                 self.search_input.clear();
             }
@@ -142,6 +144,8 @@ impl State {
                 self.search_input.clear();
             }
             AppAction::StartAdd => {
+                self.is_search_active = false;
+                self.search_input.clear();
                 self.is_add_active = true;
                 self.add_input.clear();
             }
