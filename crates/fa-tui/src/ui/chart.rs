@@ -146,19 +146,70 @@ impl Widget for KlineChart<'_> {
     }
 }
 
+struct VolumeChart<'a> {
+    visible: &'a [fa_core::OHLCV],
+    bar_w: u16,
+}
+
+impl Widget for VolumeChart<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let h = area.height;
+        let w = area.width;
+        if h == 0 || w == 0 || self.visible.is_empty() {
+            return;
+        }
+
+        let max_vol = self.visible.iter()
+            .map(|b| b.volume)
+            .max()
+            .unwrap_or(1)
+            .max(1);
+
+        for (i, bar) in self.visible.iter().enumerate() {
+            let x_off = (i as u16) * self.bar_w;
+            if x_off >= w {
+                break;
+            }
+
+            let vol_ratio = bar.volume as f64 / max_vol as f64;
+            let bar_h = (vol_ratio * h as f64).ceil() as u16;
+            let bar_h = bar_h.min(h);
+
+            let color = if bar.close >= bar.open { Color::Red } else { Color::Green };
+
+            let body_left = area.x + x_off + 1;
+            let body_right = (area.x + x_off + self.bar_w).saturating_sub(2);
+            let max_col = area.x + w - 1;
+            let center_col = area.x + x_off + self.bar_w / 2;
+
+            for r in 0..bar_h {
+                let y = area.y + h - 1 - r;
+                for col in body_left..=body_right.min(max_col) {
+                    buf[(col, y)].set_char('█').set_fg(color);
+                }
+                if (body_left > center_col || body_right < center_col) && center_col <= max_col {
+                    buf[(center_col, y)].set_char('█').set_fg(color);
+                }
+            }
+        }
+    }
+}
+
 pub fn render(f: &mut Frame, cs: &ChartState, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),  // 标题栏
-            Constraint::Min(0),     // 图表区
-            Constraint::Length(1),  // 光标信息
+            Constraint::Length(1),      // title bar
+            Constraint::Percentage(72), // price chart
+            Constraint::Percentage(24), // volume bars
+            Constraint::Length(1),      // cursor info
         ])
         .split(area);
 
     render_titlebar(f, cs, chunks[0]);
     render_chart(f, cs, chunks[1]);
-    render_cursor_info(f, cs, chunks[2]);
+    render_volume(f, cs, chunks[2]);
+    render_cursor_info(f, cs, chunks[3]);
 }
 
 fn period_label(p: &Period) -> &'static str {
@@ -249,6 +300,24 @@ fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
         KlineChart { visible, y_min, y_max, bar_w: cs.bar_width, cursor_in_view, ma_data },
         area,
     );
+}
+
+fn render_volume(f: &mut Frame, cs: &ChartState, area: Rect) {
+    if cs.loading || cs.data.is_empty() {
+        return;
+    }
+
+    let inner_w = area.width as usize;
+    let bar_w = cs.bar_width as usize;
+    let max_visible = (inner_w / bar_w).max(1);
+
+    let half = max_visible / 2;
+    let end = (cs.cursor + half + 1).min(cs.data.len());
+    let start = end.saturating_sub(max_visible);
+    let end = (start + max_visible).min(cs.data.len());
+    let visible = &cs.data[start..end];
+
+    f.render_widget(VolumeChart { visible, bar_w: cs.bar_width }, area);
 }
 
 fn render_cursor_info(f: &mut Frame, cs: &ChartState, area: Rect) {
