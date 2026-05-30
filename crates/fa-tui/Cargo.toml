@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 fa-core      = { path = "../fa-core" }
+fa-data      = { path = "../fa-data" }
 fa-indicator = { path = "../fa-indicator" }  # used in ui/chart.rs (Task 4)
 fa-backtest  = { path = "../fa-backtest" }
 ratatui      = { workspace = true }

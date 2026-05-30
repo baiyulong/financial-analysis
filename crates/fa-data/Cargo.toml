@@ -14,6 +14,7 @@ thiserror           = { workspace = true }
 chrono              = { workspace = true }
 rust_decimal        = { workspace = true }
 rust_decimal_macros = { workspace = true }
+urlencoding         = "2"
 
 [dev-dependencies]
 mockito = { workspace = true }

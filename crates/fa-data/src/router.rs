@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use fa_core::{DataError, DataProvider, Market, Quote, Symbol, OHLCV, Period};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
+use crate::sina::{SinaFinanceProvider, StockSuggestion};
 
 /// Automatically selects provider by market; falls back on failure.
 pub struct ProviderRouter {
@@ -16,6 +17,11 @@ impl ProviderRouter {
 
     fn providers_for(&self, market: &Market) -> Vec<&Arc<dyn DataProvider>> {
         self.providers.iter().filter(|p| p.supports(market)).collect()
+    }
+
+    pub async fn search_stocks(&self, query: &str) -> Vec<StockSuggestion> {
+        let provider = SinaFinanceProvider::new();
+        provider.search_stocks(query).await.unwrap_or_default()
     }
 }
 

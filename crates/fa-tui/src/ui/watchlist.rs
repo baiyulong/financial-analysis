@@ -60,6 +60,38 @@ pub fn render(f: &mut Frame, state: &State, area: Rect) {
     }
 
     f.render_stateful_widget(list, area, &mut list_state);
+
+    if state.is_add_active && !state.search_results.is_empty() {
+        render_search_overlay(f, state, area);
+    }
+}
+
+fn render_search_overlay(f: &mut Frame, state: &State, area: Rect) {
+    let items: Vec<ListItem> = state.search_results.iter().enumerate().map(|(i, s)| {
+        let style = if i == state.search_selected {
+            Style::default().add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default()
+        };
+        ListItem::new(Line::from(vec![
+            Span::raw(format!("{:<8}", s.code)),
+            Span::raw(format!("  {}", s.name)),
+        ])).style(style)
+    }).collect();
+
+    let max_items = items.len().min(8) as u16;
+    let overlay_area = Rect {
+        x: area.x + 1,
+        y: area.y + 2,
+        width: area.width.saturating_sub(2),
+        height: max_items + 2,  // +2 for borders
+    };
+
+    let list = List::new(items)
+        .block(Block::default().title(" 搜索结果 ").borders(Borders::ALL).border_style(Style::default().fg(Color::Yellow)));
+
+    f.render_widget(ratatui::widgets::Clear, overlay_area);
+    f.render_widget(list, overlay_area);
 }
 
 #[cfg(test)]

@@ -6,6 +6,29 @@ use rust_decimal::prelude::*;
 
 const DEFAULT_BASE_URL: &str = "https://hq.sinajs.cn";
 
+#[derive(Debug, Clone)]
+pub struct StockSuggestion {
+    pub code: String,
+    pub name: String,
+}
+
+pub fn parse_sina_suggest(text: &str) -> Vec<StockSuggestion> {
+    let start = text.find('"').map(|i| i + 1).unwrap_or(0);
+    let end   = text.rfind('"').unwrap_or(text.len());
+    if start >= end { return vec![]; }
+    let content = &text[start..end];
+    if content.is_empty() { return vec![]; }
+
+    content.split('|').filter_map(|entry| {
+        let parts: Vec<&str> = entry.split(',').collect();
+        if parts.len() < 3 { return None; }
+        let code = parts[0].trim().to_string();
+        let name = parts[2].trim().to_string();
+        if code.is_empty() || name.is_empty() { return None; }
+        Some(StockSuggestion { code, name })
+    }).collect()
+}
+
 pub struct SinaFinanceProvider {
     client: reqwest::Client,
     base_url: String,
@@ -18,6 +41,26 @@ impl SinaFinanceProvider {
 
     pub fn with_base_url(base_url: impl Into<String>) -> Self {
         Self { client: reqwest::Client::new(), base_url: base_url.into() }
+    }
+
+    pub async fn search_stocks(&self, query: &str) -> Result<Vec<StockSuggestion>, DataError> {
+        if query.is_empty() {
+            return Ok(vec![]);
+        }
+        let encoded = urlencoding::encode(query);
+        let url = format!(
+            "https://suggest3.sinajs.cn/suggest/type=&key={}&name=&market=&rn=8",
+            encoded
+        );
+        let resp = self.client
+            .get(&url)
+            .header("Referer", "https://finance.sina.com.cn")
+            .send()
+            .await
+            .map_err(|e| DataError::Network(e.to_string()))?;
+        let text = resp.text().await
+            .map_err(|e| DataError::Network(e.to_string()))?;
+        Ok(parse_sina_suggest(&text))
     }
 }
 
@@ -112,6 +155,30 @@ mod tests {
     use super::*;
     use fa_core::{Market, Symbol};
     use mockito::Server;
+
+    #[test]
+    fn test_parse_sina_suggest_basic() {
+        let text = r#"var suggestvalue="600519,11,贵州茅台,上证A股,,,,,|000001,11,平安银行,深证A股,,,,,";"#;
+        let results = parse_sina_suggest(text);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].code, "600519");
+        assert_eq!(results[0].name, "贵州茅台");
+        assert_eq!(results[1].code, "000001");
+        assert_eq!(results[1].name, "平安银行");
+    }
+
+    #[test]
+    fn test_parse_sina_suggest_empty() {
+        let text = r#"var suggestvalue="";"#;
+        let results = parse_sina_suggest(text);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_parse_sina_suggest_no_quotes() {
+        let results = parse_sina_suggest("no quotes here");
+        assert!(results.is_empty());
+    }
 
     #[tokio::test]
     async fn test_parse_sina_response() {

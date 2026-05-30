@@ -136,6 +136,16 @@ impl EventHandler {
         } else if matches!(state.screen, AppScreen::Backtest(_)) {
             Self::map_key_backtest(code, modifiers)
         } else if state.is_add_active {
+            // When search results are shown, ↑↓ navigate and Enter confirms selection
+            if !state.search_results.is_empty() {
+                match (code, modifiers) {
+                    (KeyCode::Up, _)    => return Some(AppAction::SearchSelectPrev),
+                    (KeyCode::Down, _)  => return Some(AppAction::SearchSelectNext),
+                    (KeyCode::Enter, _) => return Some(AppAction::ConfirmSearchSelection),
+                    (KeyCode::Esc, _)   => return Some(AppAction::CancelAdd),
+                    _ => {}
+                }
+            }
             Self::map_key_add(code, modifiers)
         } else if !state.is_search_active
             && code == KeyCode::Char('b')

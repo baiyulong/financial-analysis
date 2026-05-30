@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use fa_backtest::{BacktestConfig, BacktestResult, BuiltinStrategy};
 use fa_core::{Portfolio, Quote, Symbol, OHLCV, Period};
+use fa_data::sina::StockSuggestion;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -121,6 +122,8 @@ pub struct State {
     pub search_input: String,
     pub is_add_active: bool,
     pub add_input: String,
+    pub search_results: Vec<StockSuggestion>,
+    pub search_selected: usize,
     pub should_quit: bool,
     pub screen: AppScreen,
 }
@@ -193,6 +196,8 @@ impl State {
                 self.search_input.clear();
                 self.is_add_active = true;
                 self.add_input.clear();
+                self.search_results.clear();
+                self.search_selected = 0;
             }
             AppAction::UpdateAddInput(c) => {
                 if self.is_add_active {
@@ -207,6 +212,8 @@ impl State {
             AppAction::CancelAdd => {
                 self.is_add_active = false;
                 self.add_input.clear();
+                self.search_results.clear();
+                self.search_selected = 0;
             }
             AppAction::ConfirmAdd => {
                 if self.is_add_active {
@@ -219,6 +226,39 @@ impl State {
                         }
                     }
                     self.add_input.clear();
+                    self.search_results.clear();
+                    self.search_selected = 0;
+                }
+            }
+            AppAction::SearchResultsUpdated(results) => {
+                self.search_results = results;
+                self.search_selected = 0;
+            }
+            AppAction::SearchSelectNext => {
+                if !self.search_results.is_empty() {
+                    self.search_selected = (self.search_selected + 1) % self.search_results.len();
+                }
+            }
+            AppAction::SearchSelectPrev => {
+                if !self.search_results.is_empty() {
+                    self.search_selected = self.search_selected
+                        .checked_sub(1)
+                        .unwrap_or(self.search_results.len() - 1);
+                }
+            }
+            AppAction::ConfirmSearchSelection => {
+                if self.is_add_active && !self.search_results.is_empty() {
+                    let suggestion = &self.search_results[self.search_selected];
+                    let market = fa_core::Market::AShare;
+                    let sym = fa_core::Symbol::new(&suggestion.code, market)
+                        .with_name(&suggestion.name);
+                    if !self.watchlist.iter().any(|s| s.code == sym.code) {
+                        self.watchlist.push(sym);
+                    }
+                    self.is_add_active = false;
+                    self.add_input.clear();
+                    self.search_results.clear();
+                    self.search_selected = 0;
                 }
             }
             AppAction::DeleteSelected => {
@@ -400,6 +440,10 @@ pub enum AppAction {
     BackspaceAdd,
     CancelAdd,
     ConfirmAdd,
+    SearchResultsUpdated(Vec<StockSuggestion>),
+    SearchSelectNext,
+    SearchSelectPrev,
+    ConfirmSearchSelection,
     DeleteSelected,
     Refresh,
     QuotesUpdated(Vec<Quote>),

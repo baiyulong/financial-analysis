@@ -143,8 +143,9 @@ async fn run_app(
                         AppAction::EnterChart(_) | AppAction::ChartChangePeriod(_) | AppAction::ChartLoadMoreHistory
                     );
                     let needs_backtest_run = matches!(&action, AppAction::RunBacktest);
+                    let needs_search = matches!(&action, AppAction::UpdateAddInput(_) | AppAction::BackspaceAdd);
 
-                    let (symbol_period, backtest_params, should_quit) = {
+                    let (symbol_period, backtest_params, search_query, should_quit) = {
                         let mut state = app_state.write().await;
                         let is_already_running = if needs_backtest_run {
                             if let AppScreen::Backtest(bs) = &state.screen {
@@ -162,7 +163,10 @@ async fn run_app(
                                 Some((bs.symbol.clone(), bs.strategy_idx, bs.config.clone()))
                             } else { None }
                         } else { None };
-                        (sp, bp, state.should_quit)
+                        let sq = if needs_search && state.is_add_active {
+                            Some(state.add_input.clone())
+                        } else { None };
+                        (sp, bp, sq, state.should_quit)
                     }; // write lock released here
 
                     if let Some((symbol, period)) = symbol_period {
@@ -203,6 +207,19 @@ async fn run_app(
                                 }
                             }
                         });
+                    }
+
+                    if let Some(query) = search_query {
+                        let tx = tx.clone();
+                        if query.is_empty() {
+                            let _ = tx.send(AppAction::SearchResultsUpdated(vec![])).await;
+                        } else {
+                            let router = Arc::clone(router);
+                            tokio::spawn(async move {
+                                let results = router.search_stocks(&query).await;
+                                let _ = tx.send(AppAction::SearchResultsUpdated(results)).await;
+                            });
+                        }
                     }
 
                     if should_quit { return Ok(()); }
