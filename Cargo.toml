@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/fa-core", "crates/fa-data", "crates/fa-indicator", "crates/fa-tui"]
+members = [".", "crates/fa-core", "crates/fa-data", "crates/fa-indicator", "crates/fa-tui", "crates/fa-backtest"]
 resolver = "2"
 
 [workspace.dependencies]
