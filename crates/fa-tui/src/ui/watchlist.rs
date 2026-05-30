@@ -37,8 +37,14 @@ pub fn render(f: &mut Frame, state: &State, area: Rect) {
         ListItem::new(line)
     }).collect();
 
+    let block_title = if state.is_add_active {
+        format!(" Add: {}█ ", state.add_input)
+    } else {
+        " Watchlist ".to_string()
+    };
+
     let list = List::new(items)
-        .block(Block::default().title(" Watchlist ").borders(Borders::ALL).border_style(border_style))
+        .block(Block::default().title(block_title).borders(Borders::ALL).border_style(border_style))
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
         .highlight_symbol("► ");
 
@@ -86,5 +92,23 @@ mod tests {
         let buf = terminal.backend().buffer().clone();
         let content: String = buf.content().iter().map(|c| c.symbol()).collect();
         assert!(content.contains("AAPL"));
+    }
+
+    #[test]
+    fn test_render_shows_add_prompt_when_active() {
+        let backend = TestBackend::new(80, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = State::default();
+        state.is_add_active = true;
+        state.add_input = "TSLA".into();
+
+        terminal.draw(|f| {
+            render(f, &state, f.area());
+        }).unwrap();
+
+        let buf = terminal.backend().buffer().clone();
+        let content: String = buf.content().iter().map(|c| c.symbol()).collect();
+        assert!(content.contains("TSLA"), "should show add input in title");
+        assert!(content.contains("Add:"), "should show 'Add:' label");
     }
 }
