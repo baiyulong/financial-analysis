@@ -2,7 +2,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use fa_core::Period;
 use tokio::sync::mpsc;
 use std::time::Duration;
-use crate::app::{AppAction, AppScreen, AppState};
+use crate::app::{AppAction, AppScreen, AppState, State};
 
 pub struct EventHandler {
     tx: mpsc::Sender<AppAction>,
@@ -34,13 +34,7 @@ impl EventHandler {
             let action: Option<AppAction> = match maybe_ev {
                 Some(Ok(Event::Key(KeyEvent { code, modifiers, .. }))) => {
                     let s = state.read().await;
-                    if matches!(s.screen, AppScreen::Chart(_)) {
-                        Self::map_key_chart(code, modifiers)
-                    } else if code == KeyCode::Enter && modifiers == KeyModifiers::NONE {
-                        s.selected_symbol().map(|sym| AppAction::EnterChart(sym.clone()))
-                    } else {
-                        Self::map_key_main(code, modifiers)
-                    }
+                    Self::resolve_action(&s, code, modifiers)
                 }
                 _ => None,
             };
@@ -92,12 +86,44 @@ impl EventHandler {
             _ => None,
         }
     }
+
+    /// Key mappings for Add mode (user is typing a new ticker to add).
+    pub fn map_key_add(code: KeyCode, modifiers: KeyModifiers) -> Option<AppAction> {
+        match (code, modifiers) {
+            (KeyCode::Enter, _) => Some(AppAction::ConfirmAdd),
+            (KeyCode::Esc, _) => Some(AppAction::CancelAdd),
+            (KeyCode::Backspace, _) => Some(AppAction::BackspaceAdd),
+            (KeyCode::Char(c), KeyModifiers::NONE) |
+            (KeyCode::Char(c), KeyModifiers::SHIFT) => Some(AppAction::UpdateAddInput(c)),
+            _ => None,
+        }
+    }
+
+    fn resolve_action(state: &State, code: KeyCode, modifiers: KeyModifiers) -> Option<AppAction> {
+        if matches!(state.screen, AppScreen::Chart(_)) {
+            Self::map_key_chart(code, modifiers)
+        } else if code == KeyCode::Char('c') && modifiers == KeyModifiers::CONTROL {
+            Some(AppAction::Quit)
+        } else if state.is_add_active {
+            Self::map_key_add(code, modifiers)
+        } else if !state.is_search_active
+            && code == KeyCode::Char('a')
+            && modifiers == KeyModifiers::NONE
+        {
+            Some(AppAction::StartAdd)
+        } else if code == KeyCode::Enter && modifiers == KeyModifiers::NONE {
+            state.selected_symbol().map(|sym| AppAction::EnterChart(sym.clone()))
+        } else {
+            Self::map_key_main(code, modifiers)
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fa_core::Period;
+    use crate::app::State;
+    use fa_core::{Market, Period, Symbol};
 
     #[test]
     fn test_map_quit() {
@@ -182,6 +208,83 @@ mod tests {
         assert!(matches!(
             EventHandler::map_key_chart(KeyCode::Esc, KeyModifiers::NONE),
             Some(AppAction::ExitChart)
+        ));
+    }
+
+    #[test]
+    fn test_map_key_add_routing() {
+        // Enter → ConfirmAdd
+        assert!(matches!(
+            EventHandler::map_key_add(KeyCode::Enter, KeyModifiers::NONE),
+            Some(AppAction::ConfirmAdd)
+        ));
+        // Esc → CancelAdd
+        assert!(matches!(
+            EventHandler::map_key_add(KeyCode::Esc, KeyModifiers::NONE),
+            Some(AppAction::CancelAdd)
+        ));
+        // Backspace → BackspaceAdd
+        assert!(matches!(
+            EventHandler::map_key_add(KeyCode::Backspace, KeyModifiers::NONE),
+            Some(AppAction::BackspaceAdd)
+        ));
+        // Char → UpdateAddInput
+        assert!(matches!(
+            EventHandler::map_key_add(KeyCode::Char('A'), KeyModifiers::NONE),
+            Some(AppAction::UpdateAddInput('A'))
+        ));
+        assert!(matches!(
+            EventHandler::map_key_add(KeyCode::Char('a'), KeyModifiers::SHIFT),
+            Some(AppAction::UpdateAddInput('a'))
+        ));
+    }
+
+    #[test]
+    fn test_resolve_action_starts_add_when_idle() {
+        let state = State::default();
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Char('a'), KeyModifiers::NONE),
+            Some(AppAction::StartAdd)
+        ));
+    }
+
+    #[test]
+    fn test_resolve_action_keeps_search_input_when_search_active() {
+        let mut state = State::default();
+        state.is_search_active = true;
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Char('a'), KeyModifiers::NONE),
+            Some(AppAction::UpdateSearchInput('a'))
+        ));
+    }
+
+    #[test]
+    fn test_resolve_action_routes_chars_to_add_when_add_active() {
+        let mut state = State::default();
+        state.is_add_active = true;
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Char('x'), KeyModifiers::NONE),
+            Some(AppAction::UpdateAddInput('x'))
+        ));
+    }
+
+    #[test]
+    fn test_resolve_action_enters_chart_for_selected_symbol() {
+        let mut state = State::default();
+        state.watchlist.push(Symbol::new("AAPL", Market::USStock));
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Enter, KeyModifiers::NONE),
+            Some(AppAction::EnterChart(sym)) if sym.code == "AAPL"
+        ));
+    }
+
+    #[test]
+    fn test_resolve_action_ctrlc_always_quits_even_in_add_mode() {
+        let mut state = State::default();
+        state.is_add_active = true;
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Char('c'), KeyModifiers::CONTROL),
+            Some(AppAction::Quit)
         ));
     }
 
