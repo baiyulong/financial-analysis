@@ -22,8 +22,12 @@ impl YahooFinanceProvider {
     }
 
     pub fn with_base_url(base_url: impl Into<String>) -> Self {
+        let client = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .build()
+            .expect("failed to build HTTP client");
         Self {
-            client: reqwest::Client::new(),
+            client,
             base_url: base_url.into(),
             cache: Arc::new(Mutex::new(InMemoryCache::new(
                 std::time::Duration::from_secs(60),
