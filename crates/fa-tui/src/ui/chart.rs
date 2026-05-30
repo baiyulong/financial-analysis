@@ -7,6 +7,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget},
     Frame,
 };
+use rust_decimal::prelude::ToPrimitive;
 use crate::app::ChartState;
 
 struct KlineChart<'a> {
@@ -34,7 +35,6 @@ impl Widget for KlineChart<'_> {
 
         // ── Pass 1: Candlestick bars ──────────────────────────────────────
         for (i, bar) in self.visible.iter().enumerate() {
-            use rust_decimal::prelude::ToPrimitive;
             let x_off = (i as u16) * self.bar_w;
             if x_off >= w {
                 break;
@@ -91,7 +91,6 @@ impl Widget for KlineChart<'_> {
         // ── Pass 2: MA overlay (─ dot at price row for each bar) ─────────
         for (color, vis_ma) in &self.ma_data {
             for (i, v) in vis_ma.iter().enumerate() {
-                use rust_decimal::prelude::ToPrimitive;
                 if let Some(price) = v.and_then(|d| d.to_f64()) {
                     let x_off = (i as u16) * self.bar_w;
                     if x_off >= w {
@@ -196,10 +195,10 @@ fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
     let visible = &cs.data[start..end];
 
     let price_min = visible.iter()
-        .filter_map(|b| { use rust_decimal::prelude::ToPrimitive; b.low.to_f64() })
+        .filter_map(|b| b.low.to_f64())
         .fold(f64::MAX, f64::min);
     let price_max = visible.iter()
-        .filter_map(|b| { use rust_decimal::prelude::ToPrimitive; b.high.to_f64() })
+        .filter_map(|b| b.high.to_f64())
         .fold(f64::MIN, f64::max);
 
     let padding = ((price_max - price_min) * 0.05).max(0.01);
@@ -214,7 +213,8 @@ fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
         .filter(|&&(period, _)| cs.ma_periods.contains(&period))
         .map(|&(period, color)| {
             let all_ma = sma(&cs.data, period);
-            let vis_ma = if all_ma.len() >= end { all_ma[start..end].to_vec() } else { vec![] };
+            // sma() always returns data.len() elements, so start..end is always valid
+            let vis_ma = all_ma[start..end].to_vec();
             (color, vis_ma)
         })
         .collect();
