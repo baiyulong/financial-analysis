@@ -10,23 +10,26 @@ pub struct EventHandler {
 
 impl EventHandler {
     pub fn new(tx: mpsc::Sender<AppAction>) -> Self {
-        Self { tx, tick_rate: Duration::from_millis(100) }
+        Self { tx, tick_rate: Duration::from_millis(50) }
     }
 
     pub async fn run(&self) {
         loop {
             if self.tx.is_closed() { break; }
 
-            let Ok(has_event) = tokio::task::spawn_blocking(|| {
-                event::poll(Duration::from_millis(100))
-            }).await else { break };
+            let tick = self.tick_rate;
+            let ev = tokio::task::spawn_blocking(move || {
+                if event::poll(tick).unwrap_or(false) {
+                    Some(event::read())
+                } else {
+                    None
+                }
+            }).await;
 
-            if !has_event.unwrap_or(false) { continue; }
+            let Ok(maybe_ev) = ev else { break };
 
-            let Ok(ev) = tokio::task::spawn_blocking(event::read).await else { break };
-
-            let action = match ev {
-                Ok(Event::Key(KeyEvent { code, modifiers, .. })) => {
+            let action = match maybe_ev {
+                Some(Ok(Event::Key(KeyEvent { code, modifiers, .. }))) => {
                     Self::map_key(code, modifiers)
                 }
                 _ => None,

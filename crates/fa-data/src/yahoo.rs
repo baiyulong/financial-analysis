@@ -179,11 +179,11 @@ fn parse_ohlcv_response(json: &serde_json::Value, symbol: &Symbol) -> Result<Vec
             Some(OHLCV {
                 symbol: symbol.clone(),
                 timestamp: dt,
-                open:   f64_to_dec(opens[i].as_f64()?),
-                high:   f64_to_dec(highs[i].as_f64()?),
-                low:    f64_to_dec(lows[i].as_f64()?),
-                close:  f64_to_dec(closes[i].as_f64()?),
-                volume: vols[i].as_u64().unwrap_or(0),
+                open:   f64_to_dec(opens.get(i)?.as_f64()?),
+                high:   f64_to_dec(highs.get(i)?.as_f64()?),
+                low:    f64_to_dec(lows.get(i)?.as_f64()?),
+                close:  f64_to_dec(closes.get(i)?.as_f64()?),
+                volume: vols.get(i).and_then(|v| v.as_u64()).unwrap_or(0),
             })
         })
         .collect();

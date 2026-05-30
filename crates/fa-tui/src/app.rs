@@ -81,7 +81,8 @@ impl State {
                 if self.focused_panel == FocusedPanel::Watchlist
                     && self.selected_watchlist < self.watchlist.len()
                 {
-                    self.watchlist.remove(self.selected_watchlist);
+                    let removed = self.watchlist.remove(self.selected_watchlist);
+                    self.quotes.remove(&removed.code);
                     if self.selected_watchlist > 0 {
                         self.selected_watchlist -= 1;
                     }
@@ -204,5 +205,30 @@ mod tests {
         let mut s = make_state();
         s.apply(AppAction::Quit);
         assert!(s.should_quit);
+    }
+
+    #[test]
+    fn test_delete_cleans_up_quotes() {
+        let mut s = make_state();
+        s.quotes.insert("AAPL".into(), fa_core::Quote {
+            symbol: fa_core::Symbol::new("AAPL", fa_core::Market::USStock),
+            price: rust_decimal::Decimal::ZERO,
+            change: rust_decimal::Decimal::ZERO,
+            change_pct: rust_decimal::Decimal::ZERO,
+            open: None,
+            high: None,
+            low: None,
+            volume: None,
+            market_cap: None,
+            pe_ratio: None,
+            week_52_high: None,
+            week_52_low: None,
+            name: None,
+            timestamp: chrono::Utc::now(),
+        });
+        s.selected_watchlist = 0;
+        s.apply(AppAction::DeleteSelected);
+        assert_eq!(s.watchlist.len(), 1);
+        assert!(!s.quotes.contains_key("AAPL"));
     }
 }

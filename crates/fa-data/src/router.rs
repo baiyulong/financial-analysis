@@ -35,7 +35,10 @@ impl DataProvider for ProviderRouter {
                 match provider.fetch_quote(symbol).await {
                     Ok(quote) => return Ok(quote),
                     Err(DataError::RateLimited { retry_after }) => {
-                        sleep(Duration::from_secs(retry_after)).await;
+                        last_err = DataError::RateLimited { retry_after };
+                        if attempt + 1 < self.max_retries {
+                            sleep(Duration::from_secs(retry_after)).await;
+                        }
                     }
                     Err(e) => {
                         last_err = e;
