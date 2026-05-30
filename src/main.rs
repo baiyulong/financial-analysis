@@ -11,7 +11,7 @@ use fa_data::{router::ProviderRouter, sina::SinaFinanceProvider, yahoo::YahooFin
 use fa_tui::{
     app::{AppAction, AppScreen, AppState, State},
     event::EventHandler,
-    ui::{chart, detail, layout, portfolio, statusbar, watchlist},
+    ui::{backtest, chart, detail, layout, portfolio, statusbar, watchlist},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{io, sync::Arc, time::Duration};
@@ -124,6 +124,9 @@ async fn run_app(
                     }
                     AppScreen::Chart(cs) => {
                         chart::render(f, cs, f.area());
+                    }
+                    AppScreen::Backtest(bs) => {
+                        backtest::render(f, bs, f.area());
                     }
                 }
             })?;
