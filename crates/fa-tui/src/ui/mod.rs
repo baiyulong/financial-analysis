@@ -4,3 +4,4 @@ pub mod detail;
 pub mod statusbar;
 pub mod layout;
 pub mod chart;
+pub mod backtest;
