@@ -93,7 +93,8 @@ impl BacktestResult {
 
     /// Write trade log to a CSV file.
     pub fn export_csv(&self, path: &std::path::Path) -> std::io::Result<()> {
-        let mut f = std::fs::File::create(path)?;
+        use std::io::BufWriter;
+        let mut f = BufWriter::new(std::fs::File::create(path)?);
         writeln!(f, "date,action,price,quantity,amount,pnl")?;
         for t in &self.trades {
             let action = match t.action { TradeAction::Buy => "buy", TradeAction::Sell => "sell" };
@@ -135,7 +136,7 @@ fn compute_sharpe(equity: &[Decimal]) -> Decimal {
     }).collect();
     let n = returns.len() as f64;
     let mean = returns.iter().sum::<f64>() / n;
-    let variance = returns.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / n;
+    let variance = returns.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (n - 1.0);
     let std_dev = variance.sqrt();
     if std_dev == 0.0 { return dec!(0); }
     let rf_daily = 0.03 / 252.0;

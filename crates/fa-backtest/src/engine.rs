@@ -86,13 +86,13 @@ impl Engine {
                     }
                 }
                 Signal::SellAll => {
-                    if let Some((qty, net, pnl)) = portfolio.sell_all(sell_fill, self.config.commission_bps) {
+                    if let Some((qty, _net, pnl)) = portfolio.sell_all(sell_fill, self.config.commission_bps) {
                         trades.push(Trade {
                             date: bar.timestamp.date_naive(),
                             action: TradeAction::Sell,
                             price: sell_fill,
                             quantity: qty,
-                            amount: net,
+                            amount: sell_fill * Decimal::from(qty),
                             pnl: Some(pnl),
                         });
                     }

@@ -6,7 +6,7 @@ use rust_decimal::prelude::ToPrimitive;
 pub(crate) struct Portfolio {
     pub cash: Decimal,
     pub position: i64,
-    /// Total cost of shares currently held (excluding commission already deducted from cash).
+    /// All-in cost of shares held (including buy commission).
     pub cost_basis: Decimal,
 }
 
@@ -33,7 +33,7 @@ impl Portfolio {
         let commission = cost * commission_rate;
         self.cash -= cost + commission;
         self.position += shares;
-        self.cost_basis += cost;
+        self.cost_basis += cost + commission;
         Some((shares, fill_price))
     }
 
