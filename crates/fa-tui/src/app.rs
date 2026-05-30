@@ -74,8 +74,32 @@ pub struct State {
     pub status_message: Option<String>,
     pub is_search_active: bool,
     pub search_input: String,
+    pub is_add_active: bool,
+    pub add_input: String,
     pub should_quit: bool,
     pub screen: AppScreen,
+}
+
+/// Infer market and construct Symbol from user-typed ticker input.
+/// Rules:
+///   - starts with "sh"/"sz" (case-insensitive) → AShare, lowercase prefix preserved
+///   - all ASCII digits → AShare, code unchanged
+///   - otherwise → USStock, uppercased
+fn parse_add_symbol(input: &str) -> Option<fa_core::Symbol> {
+    use fa_core::Market;
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let lower = trimmed.to_lowercase();
+    let (market, code) = if lower.starts_with("sh") || lower.starts_with("sz") {
+        (Market::AShare, lower)
+    } else if trimmed.chars().all(|c| c.is_ascii_digit()) {
+        (Market::AShare, trimmed.to_string())
+    } else {
+        (Market::USStock, trimmed.to_uppercase())
+    };
+    Some(fa_core::Symbol::new(code, market))
 }
 
 impl State {
@@ -116,6 +140,37 @@ impl State {
             AppAction::CancelSearch => {
                 self.is_search_active = false;
                 self.search_input.clear();
+            }
+            AppAction::StartAdd => {
+                self.is_add_active = true;
+                self.add_input.clear();
+            }
+            AppAction::UpdateAddInput(c) => {
+                if self.is_add_active {
+                    self.add_input.push(c);
+                }
+            }
+            AppAction::BackspaceAdd => {
+                if self.is_add_active {
+                    self.add_input.pop();
+                }
+            }
+            AppAction::CancelAdd => {
+                self.is_add_active = false;
+                self.add_input.clear();
+            }
+            AppAction::ConfirmAdd => {
+                if self.is_add_active {
+                    self.is_add_active = false;
+                    if let Some(sym) = parse_add_symbol(&self.add_input) {
+                        if !self.watchlist.iter().any(|s| {
+                            s.market == sym.market && s.yahoo_ticker() == sym.yahoo_ticker()
+                        }) {
+                            self.watchlist.push(sym);
+                        }
+                    }
+                    self.add_input.clear();
+                }
             }
             AppAction::DeleteSelected => {
                 if self.focused_panel == FocusedPanel::Watchlist
@@ -208,6 +263,11 @@ pub enum AppAction {
     UpdateSearchInput(char),
     BackspaceSearch,
     CancelSearch,
+    StartAdd,
+    UpdateAddInput(char),
+    BackspaceAdd,
+    CancelAdd,
+    ConfirmAdd,
     DeleteSelected,
     Refresh,
     QuotesUpdated(Vec<Quote>),
@@ -276,6 +336,119 @@ mod tests {
         s.apply(AppAction::CancelSearch);
         assert!(!s.is_search_active);
         assert!(s.search_input.is_empty());
+    }
+
+    #[test]
+    fn test_start_add_activates_mode() {
+        let mut s = make_state();
+        s.apply(AppAction::StartAdd);
+        assert!(s.is_add_active);
+        assert!(s.add_input.is_empty());
+    }
+
+    #[test]
+    fn test_cancel_add_clears_mode() {
+        let mut s = make_state();
+        s.is_add_active = true;
+        s.add_input = "AAP".into();
+        s.apply(AppAction::CancelAdd);
+        assert!(!s.is_add_active);
+        assert!(s.add_input.is_empty());
+    }
+
+    #[test]
+    fn test_confirm_add_us_stock() {
+        let mut s = make_state();
+        s.is_add_active = true;
+        s.add_input = "MSFT".into();
+        let original_len = s.watchlist.len();
+        s.apply(AppAction::ConfirmAdd);
+        assert!(!s.is_add_active);
+        assert_eq!(s.watchlist.len(), original_len + 1);
+        let added = s.watchlist.last().unwrap();
+        assert_eq!(added.code, "MSFT");
+        assert_eq!(added.market, fa_core::Market::USStock);
+    }
+
+    #[test]
+    fn test_confirm_add_a_share_sh_prefix() {
+        let mut s = make_state();
+        s.is_add_active = true;
+        s.add_input = "sh600519".into();
+        s.apply(AppAction::ConfirmAdd);
+        let added = s.watchlist.last().unwrap();
+        assert_eq!(added.code, "sh600519");
+        assert_eq!(added.market, fa_core::Market::AShare);
+    }
+
+    #[test]
+    fn test_confirm_add_a_share_digits() {
+        let mut s = make_state();
+        s.is_add_active = true;
+        s.add_input = "000001".into();
+        s.apply(AppAction::ConfirmAdd);
+        let added = s.watchlist.last().unwrap();
+        assert_eq!(added.code, "000001");
+        assert_eq!(added.market, fa_core::Market::AShare);
+    }
+
+    #[test]
+    fn test_confirm_add_empty_input_does_nothing() {
+        let mut s = make_state();
+        s.is_add_active = true;
+        s.add_input = "   ".into();
+        let original_len = s.watchlist.len();
+        s.apply(AppAction::ConfirmAdd);
+        assert!(!s.is_add_active);
+        assert_eq!(s.watchlist.len(), original_len);
+    }
+
+    #[test]
+    fn test_confirm_add_duplicate_does_not_add() {
+        let mut s = make_state();
+        s.is_add_active = true;
+        s.add_input = "AAPL".into(); // AAPL already in make_state()
+        let original_len = s.watchlist.len();
+        s.apply(AppAction::ConfirmAdd);
+        assert_eq!(s.watchlist.len(), original_len);
+    }
+
+    #[test]
+    fn test_update_and_backspace_add_input() {
+        let mut s = make_state();
+        s.is_add_active = true;
+        s.apply(AppAction::UpdateAddInput('A'));
+        s.apply(AppAction::UpdateAddInput('A'));
+        s.apply(AppAction::UpdateAddInput('P'));
+        assert_eq!(s.add_input, "AAP");
+        s.apply(AppAction::BackspaceAdd);
+        assert_eq!(s.add_input, "AA");
+    }
+
+    #[test]
+    fn test_confirm_add_ignored_when_mode_inactive() {
+        let mut s = make_state();
+        s.add_input = "MSFT".into();
+        let original_len = s.watchlist.len();
+        s.apply(AppAction::ConfirmAdd);
+        assert!(!s.is_add_active);
+        assert_eq!(s.watchlist.len(), original_len);
+        assert_eq!(s.add_input, "MSFT");
+    }
+
+    #[test]
+    fn test_confirm_add_a_share_duplicate_by_ticker_does_not_add() {
+        let mut s = make_state();
+        s.is_add_active = true;
+        s.add_input = "sh600519".into();
+        s.apply(AppAction::ConfirmAdd);
+
+        s.is_add_active = true;
+        s.add_input = "600519".into();
+        let original_len = s.watchlist.len();
+        s.apply(AppAction::ConfirmAdd);
+
+        assert_eq!(s.watchlist.len(), original_len);
     }
 
     #[test]
