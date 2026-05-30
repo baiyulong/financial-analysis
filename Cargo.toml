@@ -39,12 +39,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-fa-core = { path = "crates/fa-core" }
-fa-data = { path = "crates/fa-data" }
-fa-tui  = { path = "crates/fa-tui" }
-tokio   = { workspace = true }
-anyhow  = { workspace = true }
-toml    = { workspace = true }
-serde   = { workspace = true }
+fa-core      = { path = "crates/fa-core" }
+fa-data      = { path = "crates/fa-data" }
+fa-tui       = { path = "crates/fa-tui" }
+tokio        = { workspace = true }
+anyhow       = { workspace = true }
+toml         = { workspace = true }
+serde        = { workspace = true }
 rust_decimal = { workspace = true }
-dirs    = "5"
+crossterm    = { workspace = true }
+ratatui      = { workspace = true }
+dirs         = "5"
