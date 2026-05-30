@@ -10,10 +10,14 @@ use crate::app::State;
 pub fn render(f: &mut Frame, state: &State, area: Rect) {
     let content = if let Some(sym) = state.selected_symbol() {
         if let Some(q) = state.quotes.get(&sym.code) {
+            let fallback_code = sym.display_code();
+            let display_name = q.name.as_deref()
+                .or(sym.name.as_deref())
+                .unwrap_or(fallback_code.as_str());
             vec![
                 Line::from(format!(
                     "  {}  {}",
-                    q.name.as_deref().unwrap_or(&sym.code),
+                    display_name,
                     sym.display_code(),
                 )),
                 Line::from(format!(
@@ -37,7 +41,10 @@ pub fn render(f: &mut Frame, state: &State, area: Rect) {
                 )),
             ]
         } else {
-            vec![Line::from(format!("  {}  加载中...", sym.name.as_deref().unwrap_or(&sym.code)))]
+            let label = sym.name.as_deref()
+                .map(|n| n.to_string())
+                .unwrap_or_else(|| sym.display_code());
+            vec![Line::from(format!("  {}  加载中...", label))]
         }
     } else {
         vec![Line::from("Select a symbol to view details")]

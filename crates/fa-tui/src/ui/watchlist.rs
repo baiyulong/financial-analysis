@@ -1,4 +1,5 @@
 // crates/fa-tui/src/ui/watchlist.rs
+use unicode_width::UnicodeWidthStr;
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -30,9 +31,12 @@ pub fn render(f: &mut Frame, state: &State, area: Rect) {
         };
 
         let name_str = sym.name.as_deref().unwrap_or("");
+        let truncated: String = name_str.chars().take(4).collect();
+        let display_w = UnicodeWidthStr::width(truncated.as_str());
+        let pad = 8usize.saturating_sub(display_w);
         let line = Line::from(vec![
             Span::raw(format!("{:<6}", sym.display_code())),
-            Span::raw(format!(" {:<8}", name_str.chars().take(4).collect::<String>())),  // max 4 Chinese chars
+            Span::raw(format!(" {}{}", truncated, " ".repeat(pad))),  // unicode-aware padding
             Span::styled(format!("{:>8}", price_str), Style::default().fg(color)),
             Span::styled(format!("  {:>12}", change_str), Style::default().fg(color)),
         ]);

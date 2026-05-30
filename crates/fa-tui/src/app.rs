@@ -233,8 +233,10 @@ impl State {
                 for q in quotes {
                     // Propagate name from quote to the symbol in watchlist
                     if let Some(ref name) = q.name {
-                        if let Some(sym) = self.watchlist.iter_mut().find(|s| s.code == q.symbol.code) {
-                            sym.name = Some(name.clone());
+                        if !name.is_empty() {
+                            if let Some(sym) = self.watchlist.iter_mut().find(|s| s.code == q.symbol.code) {
+                                sym.name = Some(name.clone());
+                            }
                         }
                     }
                     self.quotes.insert(q.symbol.code.clone(), q);
@@ -769,5 +771,57 @@ mod tests {
         if let AppScreen::Backtest(ref bs) = s.screen {
             assert!(matches!(bs.status, BacktestStatus::Running));
         }
+    }
+
+    #[test]
+    fn test_quotes_updated_propagates_name() {
+        let mut s = State {
+            watchlist: vec![{
+                let mut sym = Symbol::new("sh600519", fa_core::Market::AShare);
+                sym.name = None;
+                sym
+            }],
+            ..Default::default()
+        };
+
+        // Apply QuotesUpdated with a name — should propagate to watchlist symbol
+        let q_with_name = fa_core::Quote {
+            symbol: Symbol::new("sh600519", fa_core::Market::AShare),
+            price: rust_decimal::Decimal::ZERO,
+            change: rust_decimal::Decimal::ZERO,
+            change_pct: rust_decimal::Decimal::ZERO,
+            open: None,
+            high: None,
+            low: None,
+            volume: None,
+            market_cap: None,
+            pe_ratio: None,
+            week_52_high: None,
+            week_52_low: None,
+            name: Some("贵州茅台".to_string()),
+            timestamp: chrono::Utc::now(),
+        };
+        s.apply(AppAction::QuotesUpdated(vec![q_with_name]));
+        assert_eq!(s.watchlist[0].name, Some("贵州茅台".to_string()));
+
+        // Apply QuotesUpdated with name: None — cached name must survive
+        let q_no_name = fa_core::Quote {
+            symbol: Symbol::new("sh600519", fa_core::Market::AShare),
+            price: rust_decimal::Decimal::ZERO,
+            change: rust_decimal::Decimal::ZERO,
+            change_pct: rust_decimal::Decimal::ZERO,
+            open: None,
+            high: None,
+            low: None,
+            volume: None,
+            market_cap: None,
+            pe_ratio: None,
+            week_52_high: None,
+            week_52_low: None,
+            name: None,
+            timestamp: chrono::Utc::now(),
+        };
+        s.apply(AppAction::QuotesUpdated(vec![q_no_name]));
+        assert_eq!(s.watchlist[0].name, Some("贵州茅台".to_string()), "None update must not overwrite cached name");
     }
 }

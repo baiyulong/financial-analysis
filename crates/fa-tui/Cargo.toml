@@ -14,5 +14,6 @@ async-trait  = { workspace = true }
 chrono       = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
+unicode-width = "0.2"
 
 [dev-dependencies]
