@@ -10,7 +10,7 @@ use fa_core::DataProvider;
 use fa_data::{router::ProviderRouter, sina::SinaFinanceProvider, yahoo::YahooFinanceProvider};
 use fa_backtest::{BuiltinStrategy, Engine};
 use fa_tui::{
-    app::{AppAction, AppScreen, AppState, State},
+    app::{AppAction, AppScreen, AppState, BacktestStatus, State},
     event::EventHandler,
     ui::{backtest, chart, detail, layout, portfolio, statusbar, watchlist},
 };
@@ -146,13 +146,18 @@ async fn run_app(
 
                     let (symbol_period, backtest_params, should_quit) = {
                         let mut state = app_state.write().await;
+                        let is_already_running = if needs_backtest_run {
+                            if let AppScreen::Backtest(bs) = &state.screen {
+                                matches!(bs.status, BacktestStatus::Running)
+                            } else { false }
+                        } else { false };
                         state.apply(action);
                         let sp = if needs_ohlcv_fetch {
                             if let AppScreen::Chart(cs) = &state.screen {
                                 Some((cs.symbol.clone(), cs.period))
                             } else { None }
                         } else { None };
-                        let bp = if needs_backtest_run {
+                        let bp = if needs_backtest_run && !is_already_running {
                             if let AppScreen::Backtest(bs) = &state.screen {
                                 Some((bs.symbol.clone(), bs.strategy_idx, bs.config.clone()))
                             } else { None }
@@ -186,8 +191,11 @@ async fn run_app(
                                     let engine = Engine::new(config);
                                     let presets = BuiltinStrategy::all();
                                     let preset = &presets[strategy_idx.min(presets.len().saturating_sub(1))];
-                                    let mut strategy = preset.to_boxed();
-                                    let result = engine.run(&data, strategy.as_mut());
+                                    let strategy = preset.to_boxed();
+                                    let result = tokio::task::spawn_blocking(move || {
+                                        let mut strat = strategy;
+                                        engine.run(&data, strat.as_mut())
+                                    }).await.expect("backtest task panicked");
                                     let _ = tx.send(AppAction::BacktestComplete(result)).await;
                                 }
                                 Err(e) => {

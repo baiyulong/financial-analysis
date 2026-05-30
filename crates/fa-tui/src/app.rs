@@ -99,11 +99,7 @@ impl BacktestState {
     pub fn strategy_name(&self) -> &'static str {
         let all = BuiltinStrategy::all();
         let idx = self.strategy_idx.min(all.len().saturating_sub(1));
-        match &all[idx] {
-            BuiltinStrategy::MaCross { .. } => "双均线穿越 (MA5×MA20)",
-            BuiltinStrategy::Rsi { .. }     => "RSI 均值回归 (14/30/70)",
-            BuiltinStrategy::Bollinger { .. } => "布林带 (20, 2σ)",
-        }
+        all[idx].name()
     }
 }
 
@@ -323,7 +319,10 @@ impl State {
             }
             AppAction::BacktestScrollDown => {
                 if let AppScreen::Backtest(ref mut bs) = self.screen {
-                    bs.trade_scroll += 1;
+                    if let Some(ref result) = bs.result {
+                        let max = result.trades.len().saturating_sub(1);
+                        bs.trade_scroll = (bs.trade_scroll + 1).min(max);
+                    }
                 }
             }
             AppAction::ExitBacktest => {

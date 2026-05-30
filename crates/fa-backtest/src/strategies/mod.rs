@@ -22,7 +22,7 @@ impl BuiltinStrategy {
         ]
     }
 
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &'static str {
         match self {
             BuiltinStrategy::MaCross { .. } => "双均线穿越 (MA5×MA20)",
             BuiltinStrategy::Rsi { .. } => "RSI 均值回归 (14/30/70)",

@@ -130,7 +130,6 @@ impl EventHandler {
         } else if state.is_add_active {
             Self::map_key_add(code, modifiers)
         } else if !state.is_search_active
-            && !state.is_add_active
             && code == KeyCode::Char('b')
             && modifiers == KeyModifiers::NONE
         {
