@@ -277,8 +277,14 @@ fn render_chart_and_volume(f: &mut Frame, cs: &ChartState, strings: &'static cra
     // 5. Draw Y-axis separator │ and separator row ─ directly into the buffer.
     {
         let buf = f.buffer_mut();
-        // Vertical │ along Y-axis left edge.
+        // Vertical │ along Y-axis left edge — chart area.
         for y in yaxis_area.y..yaxis_area.y + yaxis_area.height {
+            if yaxis_area.x < inner.x + inner.width {
+                buf[(yaxis_area.x, y)].set_char('│').set_fg(Color::DarkGray);
+            }
+        }
+        // Vertical │ continues through volume area.
+        for y in vol_row.y..vol_row.y + vol_row.height {
             if yaxis_area.x < inner.x + inner.width {
                 buf[(yaxis_area.x, y)].set_char('│').set_fg(Color::DarkGray);
             }
@@ -287,10 +293,10 @@ fn render_chart_and_volume(f: &mut Frame, cs: &ChartState, strings: &'static cra
         for x in sep_row.x..sep_row.x + sep_row.width {
             buf[(x, sep_row.y)].set_char('─').set_fg(Color::DarkGray);
         }
-        // Junction where │ meets ─.
+        // Junction where │ meets ─: ┼ (cross) because │ continues both above and below.
         if yaxis_area.x < inner.x + inner.width {
             buf[(yaxis_area.x, sep_row.y)]
-                .set_char('┴')
+                .set_char('┼')
                 .set_fg(Color::DarkGray);
         }
     }
@@ -366,6 +372,65 @@ fn render_chart_and_volume(f: &mut Frame, cs: &ChartState, strings: &'static cra
     // 8. Render volume bars aligned with candles (same candle_w width).
     let vol_candle_area = Rect::new(vol_row.x, vol_row.y, candle_w, vol_row.height);
     render_volume_inner(f, cs, vol_candle_area);
+
+    // 9. Draw volume Y-axis labels on the right.
+    if !cs.loading && !cs.data.is_empty() && candle_w > 0 {
+        let (start, end) = visible_window(cs, candle_w as usize);
+        if start < end && end <= cs.data.len() {
+            let visible = &cs.data[start..end];
+            let max_vol = visible.iter().map(|b| b.volume).max().unwrap_or(1).max(1);
+            let vol_h = vol_row.height;
+            let label_x = yaxis_area.x + 1;
+            // 3 static ticks: top (max), middle (50%), bottom (0).
+            let ticks: [(u16, u64); 3] = [
+                (0, max_vol),
+                (vol_h / 2, max_vol / 2),
+                (vol_h.saturating_sub(1), 0),
+            ];
+            {
+                let buf = f.buffer_mut();
+                for (row, vol) in ticks {
+                    if row >= vol_h {
+                        continue;
+                    }
+                    let label = format!("{:>8}", format_volume(vol));
+                    for (i, ch) in label.chars().enumerate() {
+                        let col = label_x + i as u16;
+                        if col < inner.x + inner.width {
+                            buf[(col, vol_row.y + row)]
+                                .set_char(ch)
+                                .set_fg(Color::DarkGray);
+                        }
+                    }
+                }
+            }
+            // Cursor volume label — White, at the top of the cursor bar.
+            if let Some(bar) = cs.current_bar() {
+                let vol = bar.volume;
+                let vol_ratio = vol as f64 / max_vol as f64;
+                let bar_h = (vol_ratio * vol_h as f64).ceil() as u16;
+                let bar_h = bar_h.min(vol_h);
+                if bar_h > 0 {
+                    let row = vol_h.saturating_sub(bar_h);
+                    if row < vol_h {
+                        let buf = f.buffer_mut();
+                        buf[(yaxis_area.x, vol_row.y + row)]
+                            .set_char('►')
+                            .set_fg(Color::White);
+                        let label = format!("{:>8}", format_volume(vol));
+                        for (i, ch) in label.chars().enumerate() {
+                            let col = label_x + i as u16;
+                            if col < inner.x + inner.width {
+                                buf[(col, vol_row.y + row)]
+                                    .set_char(ch)
+                                    .set_fg(Color::White);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // NOTE: Returns English chart-axis codes (e.g. "1m", "1D").
@@ -397,6 +462,19 @@ fn visible_window(cs: &ChartState, inner_w: usize) -> (usize, usize) {
     let start = end.saturating_sub(max_visible);
     let end = (start + max_visible).min(cs.data.len());
     (start, end)
+}
+
+/// Formats a volume value with K/M/B suffix to fit in 8 characters.
+fn format_volume(vol: u64) -> String {
+    if vol >= 1_000_000_000 {
+        format!("{:.2}B", vol as f64 / 1_000_000_000.0)
+    } else if vol >= 1_000_000 {
+        format!("{:.2}M", vol as f64 / 1_000_000.0)
+    } else if vol >= 1_000 {
+        format!("{:.2}K", vol as f64 / 1_000.0)
+    } else {
+        format!("{}", vol)
+    }
 }
 
 fn render_titlebar(f: &mut Frame, cs: &ChartState, area: Rect) {
@@ -672,5 +750,61 @@ mod tests {
             cell.symbol() == "─" && cell.fg == ratatui::style::Color::White
         });
         assert!(has_white_dash, "last close price horizontal line (white ─) must be drawn");
+    }
+
+    #[test]
+    fn test_format_volume() {
+        assert_eq!(format_volume(0), "0");
+        assert_eq!(format_volume(999), "999");
+        assert_eq!(format_volume(1_500), "1.50K");
+        assert_eq!(format_volume(1_234_567), "1.23M");
+        assert_eq!(format_volume(2_000_000_000), "2.00B");
+    }
+
+    #[test]
+    fn test_volume_yaxis_labels_appear() {
+        // Volume Y-axis labels (K/M/B suffix) must appear in the buffer.
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let sym = Symbol::new("AAPL", Market::USStock);
+        let bar = |o: i64, h: i64, l: i64, c: i64, v: u64| OHLCV {
+            symbol: sym.clone(),
+            timestamp: Utc::now(),
+            open: Decimal::from(o),
+            high: Decimal::from(h),
+            low: Decimal::from(l),
+            close: Decimal::from(c),
+            volume: v,
+        };
+        let cs = ChartState {
+            symbol: sym.clone(),
+            period: Period::Month1,
+            data: vec![
+                bar(100, 110, 90, 105, 1_500_000),
+                bar(105, 115, 95, 98, 2_000_000),
+                bar(98, 108, 88, 102, 1_000_000),
+            ],
+            cursor: 2,
+            bar_width: 3,
+            ma_periods: vec![],
+            loading: false,
+            is_load_more: false,
+            history_extended: false,
+        };
+        terminal
+            .draw(|f| render(f, &cs, &DataSourceKind::Sina, &crate::i18n::ZH, f.area()))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        let content: String = buf.content().iter().map(|c| c.symbol()).collect();
+        // Volume labels contain 'M' suffix for millions.
+        assert!(
+            content.contains('M'),
+            "volume Y-axis labels with M suffix must appear in the buffer"
+        );
+        // The ┼ cross junction must replace the old ┴ since │ now spans both areas.
+        assert!(
+            content.contains('┼'),
+            "┼ cross junction must replace ┴ at Y-axis/separator intersection"
+        );
     }
 }
