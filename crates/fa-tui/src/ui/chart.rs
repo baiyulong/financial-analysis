@@ -337,6 +337,25 @@ fn render_chart_and_volume(f: &mut Frame, cs: &ChartState, strings: &'static cra
                         }
                     }
                 }
+                // Cursor close price label — White, overrides any tick at same row.
+                if let Some(close) = cs.current_bar().and_then(|b| b.close.to_f64()) {
+                    let row = price_to_row(close, y_min, y_max, h);
+                    if row < h {
+                        // ► marker replaces │ at the separator column for this row
+                        buf[(yaxis_area.x, yaxis_area.y + row)]
+                            .set_char('►')
+                            .set_fg(Color::White);
+                        let label = format!("{:>8.2}", close);
+                        for (i, ch) in label.chars().enumerate() {
+                            let col = label_x + i as u16;
+                            if col < inner.x + inner.width {
+                                buf[(col, yaxis_area.y + row)]
+                                    .set_char(ch)
+                                    .set_fg(Color::White);
+                            }
+                        }
+                    }
+                }
             }
         }
     }
