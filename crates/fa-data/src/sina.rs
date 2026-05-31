@@ -166,9 +166,19 @@ impl DataProvider for SinaFinanceProvider {
         let resp = self
             .client
             .get(&url)
+            .header("Referer", "https://finance.sina.com.cn")
+            .header("User-Agent", "Mozilla/5.0")
             .send()
             .await
             .map_err(|e| DataError::Network(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            return Err(DataError::Network(format!(
+                "HTTP {}",
+                resp.status()
+            )));
+        }
+
         let text = resp
             .text()
             .await
@@ -242,6 +252,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_fetch_quote_sends_referer_header() {
+        let mut server = Server::new_async().await;
+        let fixture = include_str!("../../../fixtures/sina_quote_sh600519.txt");
+        // Mock requires Referer header — will return 501 if missing
+        let mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .match_header("Referer", "https://finance.sina.com.cn")
+            .with_status(200)
+            .with_body(fixture)
+            .create_async()
+            .await;
+
+        let provider = SinaFinanceProvider::with_base_url(server.url());
+        let symbol = Symbol::new("600519", Market::AShare);
+        let quote = provider.fetch_quote(&symbol).await.unwrap();
+        assert_eq!(quote.price, rust_decimal_macros::dec!(1845.00));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_quote_returns_clear_error_on_403() {
+        let mut server = Server::new_async().await;
+        let _mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .with_status(403)
+            .with_body("Forbidden")
+            .create_async()
+            .await;
+
+        let provider = SinaFinanceProvider::with_base_url(server.url());
+        let symbol = Symbol::new("600519", Market::AShare);
+        let err = provider.fetch_quote(&symbol).await.unwrap_err();
+        // Should be a Network error mentioning "403", not a confusing Parse error
+        let msg = err.to_string();
+        assert!(
+            msg.contains("403"),
+            "expected 403 in error, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_fetch_quote_via_http() {
         let mut server = Server::new_async().await;
         let fixture = include_str!("../../../fixtures/sina_quote_sh600519.txt");
@@ -256,6 +307,32 @@ mod tests {
         let symbol = Symbol::new("600519", Market::AShare);
         let quote = provider.fetch_quote(&symbol).await.unwrap();
         assert_eq!(quote.price, rust_decimal_macros::dec!(1845.00));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_quote_handles_gb18030_charset() {
+        let mut server = Server::new_async().await;
+        // "贵州茅台" in GBK/GB18030 bytes: b9 f3 d6 dd c3 a9 cc a8
+        let gbk_name: &[u8] = &[0xb9, 0xf3, 0xd6, 0xdd, 0xc3, 0xa9, 0xcc, 0xa8];
+        let ascii_suffix =
+            b",1832.00,1830.00,1845.00,1860.00,1820.00,1844.90,1845.00,12345678,20250101,\";";
+        let mut body: Vec<u8> = b"var hq_str_sh600519=\"".to_vec();
+        body.extend_from_slice(gbk_name);
+        body.extend_from_slice(ascii_suffix);
+
+        let mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .with_status(200)
+            .with_header("Content-Type", "application/javascript; charset=GB18030")
+            .with_body(body)
+            .create_async()
+            .await;
+
+        let provider = SinaFinanceProvider::with_base_url(server.url());
+        let symbol = Symbol::new("600519", Market::AShare);
+        let quote = provider.fetch_quote(&symbol).await.unwrap();
+        assert_eq!(quote.name.as_deref(), Some("贵州茅台"));
         mock.assert_async().await;
     }
 
