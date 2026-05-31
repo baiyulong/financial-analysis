@@ -165,6 +165,13 @@ impl EventHandler {
                         DataSourceKind::AkShare => DataSourceKind::Sina,
                     };
                     Some(AppAction::SettingsSelectProvider(next))
+                } else if ss.focused_field == 2 {
+                    use crate::i18n::Language;
+                    let next = match ss.language {
+                        Language::Zh => Language::En,
+                        Language::En => Language::Zh,
+                    };
+                    Some(AppAction::SettingsSelectLanguage(next))
                 } else {
                     Some(AppAction::SettingsToggleUrlEdit)
                 }
@@ -206,7 +213,7 @@ impl EventHandler {
                 return if cs.period.can_extend_history() && !cs.history_extended {
                     Some(AppAction::ChartLoadMoreHistory)
                 } else {
-                    Some(AppAction::StatusMessage("已显示最多历史数据".into()))
+                    Some(AppAction::StatusMessage(state.strings().chart_max_history.to_string()))
                 };
             }
             Self::map_key_chart(code, modifiers)

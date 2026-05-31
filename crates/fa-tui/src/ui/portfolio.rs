@@ -77,7 +77,7 @@ pub fn render(f: &mut Frame, state: &State, area: Rect) {
     let list = List::new(items)
         .block(
             Block::default()
-                .title(" Portfolio ")
+                .title(state.strings().portfolio_title)
                 .borders(Borders::ALL)
                 .border_style(border_style),
         )

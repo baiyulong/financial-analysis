@@ -47,10 +47,11 @@ pub fn render(f: &mut Frame, state: &State, area: Rect) {
         })
         .collect();
 
+    let s = state.strings();
     let block_title = if state.is_add_active {
-        format!(" Add: {}█ ", state.add_input)
+        format!("{}{}█ ", s.add_title_prefix, state.add_input)
     } else {
-        " Watchlist ".to_string()
+        s.watchlist_title.to_string()
     };
 
     let list = List::new(items)
@@ -139,7 +140,7 @@ mod tests {
 
         let buf = terminal.backend().buffer().clone();
         let content: String = buf.content().iter().map(|c| c.symbol()).collect();
-        assert!(content.contains("Watchlist"));
+        assert!("自选股".chars().all(|c| content.contains(c)));
     }
 
     #[test]

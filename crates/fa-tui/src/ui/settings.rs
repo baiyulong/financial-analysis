@@ -10,9 +10,14 @@ use ratatui::{
 pub fn draw_settings(f: &mut Frame, area: Rect, ss: &SettingsState) {
     f.render_widget(Clear, area);
 
+    let s: &'static crate::i18n::Strings = match ss.language {
+        crate::i18n::Language::Zh => &crate::i18n::ZH,
+        crate::i18n::Language::En => &crate::i18n::EN,
+    };
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("⚙ 系统设置 (按 Esc 取消 / Enter 保存)");
+        .title(s.settings_title);
     let inner = block.inner(area);
     let outer = Paragraph::new(vec![Line::raw("")]).block(block);
     f.render_widget(outer, area);
@@ -20,13 +25,14 @@ pub fn draw_settings(f: &mut Frame, area: Rect, ss: &SettingsState) {
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(0),
-            Constraint::Length(1),
+            Constraint::Length(1), // rows[0]: gap
+            Constraint::Length(1), // rows[1]: provider
+            Constraint::Length(1), // rows[2]: gap
+            Constraint::Length(1), // rows[3]: URL
+            Constraint::Length(1), // rows[4]: gap
+            Constraint::Length(1), // rows[5]: language
+            Constraint::Min(0),    // rows[6]: spacer
+            Constraint::Length(1), // rows[7]: help
         ])
         .split(inner);
 
@@ -37,13 +43,14 @@ pub fn draw_settings(f: &mut Frame, area: Rect, ss: &SettingsState) {
         .add_modifier(Modifier::BOLD);
     let label_style = Style::default().fg(Color::White);
 
+    let provider_label = if ss.focused_field == 0 {
+        format!("> {} ", s.settings_data_source)
+    } else {
+        format!("  {} ", s.settings_data_source)
+    };
     let provider_line = Line::from(vec![
         Span::styled(
-            if ss.focused_field == 0 {
-                "> 数据源      "
-            } else {
-                "  数据源      "
-            },
+            provider_label,
             if ss.focused_field == 0 {
                 focused_prefix
             } else {
@@ -70,12 +77,13 @@ pub fn draw_settings(f: &mut Frame, area: Rect, ss: &SettingsState) {
     ]);
 
     let url_line = if ss.provider == DataSourceKind::AkShare {
+        let url_label = if ss.focused_field == 1 {
+            format!("> {} ", s.settings_akshare_url)
+        } else {
+            format!("  {} ", s.settings_akshare_url)
+        };
         let mut spans = vec![Span::styled(
-            if ss.focused_field == 1 {
-                "> AkShare URL "
-            } else {
-                "  AkShare URL "
-            },
+            url_label,
             if ss.focused_field == 1 {
                 focused_prefix
             } else {
@@ -92,28 +100,47 @@ pub fn draw_settings(f: &mut Frame, area: Rect, ss: &SettingsState) {
         }
         Line::from(spans)
     } else {
+        let url_label = if ss.focused_field == 1 {
+            format!("> {} ", s.settings_akshare_url)
+        } else {
+            format!("  {} ", s.settings_akshare_url)
+        };
         Line::from(vec![
+            Span::styled(url_label, Style::default().fg(Color::DarkGray)),
             Span::styled(
-                if ss.focused_field == 1 {
-                    "> AkShare URL "
-                } else {
-                    "  AkShare URL "
-                },
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(
-                format!("{} (仅 AkShare 使用)", ss.akshare_url),
+                format!("{} {}", ss.akshare_url, s.settings_akshare_only),
                 Style::default().fg(Color::DarkGray),
             ),
         ])
     };
 
-    let help = Paragraph::new(Line::from("↑↓ 切换 | Space 选择 | Enter 保存 | Esc 取消"))
+    let lang_line = Line::from(vec![
+        Span::styled(
+            if ss.focused_field == 2 {
+                format!("> {} ", s.settings_language)
+            } else {
+                format!("  {} ", s.settings_language)
+            },
+            if ss.focused_field == 2 { focused_prefix } else { label_style },
+        ),
+        Span::styled(
+            format!("[{}]", s.settings_lang_zh),
+            if ss.language == crate::i18n::Language::Zh { active_button } else { inactive_button },
+        ),
+        Span::raw(" "),
+        Span::styled(
+            format!("[{}]", s.settings_lang_en),
+            if ss.language == crate::i18n::Language::En { active_button } else { inactive_button },
+        ),
+    ]);
+
+    let help = Paragraph::new(Line::from(s.settings_help))
         .style(Style::default().fg(Color::DarkGray));
 
     f.render_widget(Paragraph::new(provider_line), rows[1]);
     f.render_widget(Paragraph::new(url_line), rows[3]);
-    f.render_widget(help, rows[6]);
+    f.render_widget(Paragraph::new(lang_line), rows[5]);
+    f.render_widget(help, rows[7]);
 }
 
 #[cfg(test)]
@@ -186,5 +213,16 @@ mod tests {
         let content = buffer_text(&buf);
 
         assert!(content.contains("http://127.0.0.1:8080_"));
+    }
+
+    #[test]
+    fn test_draw_settings_shows_language_row() {
+        use crate::i18n::Language;
+        let ss = SettingsState::new(DataSourceKind::Sina, "http://127.0.0.1:8080".into(), Language::Zh);
+        let buf = render_buffer(&ss);
+        let content = buffer_text(&buf);
+        assert!(content.contains("Language"), "language row must appear");
+        assert!("中文".chars().all(|c| content.contains(c)), "should show Chinese option");
+        assert!(content.contains("English"), "should show English option");
     }
 }

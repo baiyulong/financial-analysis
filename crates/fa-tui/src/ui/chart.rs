@@ -209,7 +209,7 @@ impl Widget for VolumeChart<'_> {
     }
 }
 
-pub fn render(f: &mut Frame, cs: &ChartState, data_source: &DataSourceKind, area: Rect) {
+pub fn render(f: &mut Frame, cs: &ChartState, data_source: &DataSourceKind, strings: &'static crate::i18n::Strings, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -222,10 +222,10 @@ pub fn render(f: &mut Frame, cs: &ChartState, data_source: &DataSourceKind, area
         .split(area);
 
     render_titlebar(f, cs, chunks[0]);
-    render_chart(f, cs, chunks[1]);
+    render_chart(f, cs, strings, chunks[1]);
     render_volume(f, cs, chunks[2]);
     render_cursor_info(f, cs, chunks[3]);
-    render_statusbar(f, data_source, chunks[4]);
+    render_statusbar(f, data_source, strings, chunks[4]);
 }
 
 // NOTE: Returns English chart-axis codes (e.g. "1m", "1D").
@@ -271,11 +271,12 @@ fn render_titlebar(f: &mut Frame, cs: &ChartState, area: Rect) {
     );
 }
 
-fn render_statusbar(f: &mut Frame, data_source: &DataSourceKind, area: Rect) {
-    let text = format!(
-        " 数据源: {} | F1-F5:分钟 | 1:日 5:周 m:月 q:季 y:年 | ←→:移动 | []:缩放 | Esc:返回 ",
-        super::data_source_label(data_source)
-    );
+fn render_statusbar(f: &mut Frame, data_source: &DataSourceKind, strings: &'static crate::i18n::Strings, area: Rect) {
+    let src_name = match data_source {
+        crate::app::DataSourceKind::Sina => strings.data_source_sina,
+        crate::app::DataSourceKind::AkShare => "AkShare",
+    };
+    let text = strings.chart_help.replacen("{}", src_name, 1);
     f.render_widget(
         Paragraph::new(text).style(Style::default().fg(Color::DarkGray)),
         area,
@@ -293,13 +294,9 @@ fn price_to_row(price: f64, y_min: f64, y_max: f64, height: u16) -> u16 {
     row.min(height.saturating_sub(1))
 }
 
-fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
+fn render_chart(f: &mut Frame, cs: &ChartState, strings: &'static crate::i18n::Strings, area: Rect) {
     if cs.loading || cs.data.is_empty() {
-        let msg = if cs.loading {
-            "Loading data..."
-        } else {
-            "No data available"
-        };
+        let msg = if cs.loading { strings.chart_loading } else { strings.chart_no_data };
         f.render_widget(
             Paragraph::new(msg)
                 .block(Block::default().borders(Borders::ALL))
@@ -459,7 +456,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let cs = make_chart_state_loading();
         terminal
-            .draw(|f| render(f, &cs, &DataSourceKind::Sina, f.area()))
+            .draw(|f| render(f, &cs, &DataSourceKind::Sina, &crate::i18n::ZH, f.area()))
             .unwrap();
         let buf = terminal.backend().buffer().clone();
         let content: String = buf.content().iter().map(|c| c.symbol()).collect();
@@ -472,7 +469,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let cs = make_chart_state_with_data();
         terminal
-            .draw(|f| render(f, &cs, &DataSourceKind::Sina, f.area()))
+            .draw(|f| render(f, &cs, &DataSourceKind::Sina, &crate::i18n::ZH, f.area()))
             .unwrap();
         let buf = terminal.backend().buffer().clone();
         let content: String = buf.content().iter().map(|c| c.symbol()).collect();

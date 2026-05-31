@@ -17,30 +17,34 @@ use ratatui::{
 
 pub use settings::draw_settings;
 
-pub(crate) fn data_source_label(data_source: &DataSourceKind) -> &'static str {
+pub(crate) fn data_source_label(data_source: &DataSourceKind, s: &'static crate::i18n::Strings) -> &'static str {
     match data_source {
-        DataSourceKind::Sina => "新浪",
+        DataSourceKind::Sina => s.data_source_sina,
         DataSourceKind::AkShare => "AkShare",
     }
 }
 
 fn render_main_statusbar(f: &mut Frame, state: &State, area: Rect, refresh_interval: u64) {
+    let s = state.strings();
     let updated = state
         .last_updated
         .map(|t| t.format("%H:%M:%S").to_string())
-        .unwrap_or_else(|| "Never".into());
+        .unwrap_or_else(|| s.never.to_string());
     let status = state.status_message.as_deref().unwrap_or("");
     let search = if state.is_search_active {
-        format!("  Search: {}_", state.search_input)
+        format!("  {}{}_", s.search_prompt, state.search_input)
     } else {
         String::new()
     };
 
     let line = Line::from(vec![Span::styled(
         format!(
-            "数据源: {} | [Updated: {}] [Refresh: {}s]  {}{}",
-            data_source_label(&state.data_source),
+            "{}: {} | [{}]: {} | [{}]: {}s  {}{}",
+            s.data_source_label,
+            data_source_label(&state.data_source, s),
+            s.updated_label,
             updated,
+            s.refresh_label,
             refresh_interval,
             status,
             search
@@ -61,10 +65,10 @@ pub fn draw(f: &mut Frame, state: &State, refresh_interval: u64) {
             render_main_statusbar(f, state, areas.statusbar, refresh_interval);
         }
         AppScreen::Chart(cs) => {
-            chart::render(f, cs, &state.data_source, f.area());
+            chart::render(f, cs, &state.data_source, state.strings(), f.area());
         }
         AppScreen::Backtest(bs) => {
-            backtest::render(f, bs, f.area());
+            backtest::render(f, bs, state.strings(), f.area());
         }
         AppScreen::Settings(ss) => {
             draw_settings(f, f.area(), ss);
