@@ -212,6 +212,9 @@ pub fn render(f: &mut Frame, cs: &ChartState, area: Rect) {
     render_cursor_info(f, cs, chunks[3]);
 }
 
+// NOTE: Returns English chart-axis codes (e.g. "1m", "1D").
+// For Chinese TUI labels used elsewhere, see Period::label().
+// Keep in sync with Period::label() when adding new Period variants.
 fn period_label(p: &Period) -> &'static str {
     match p {
         Period::Min1   => "1m",

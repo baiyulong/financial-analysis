@@ -3,7 +3,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use crate::Symbol;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Period {
     Min1,
     Min5,
@@ -23,6 +23,8 @@ impl Period {
     /// Yahoo Finance range parameter
     pub fn yahoo_range(&self) -> &'static str {
         match self {
+            // Minute periods are served by AkShare, not Yahoo Finance.
+            // "1d" is a safe no-op fallback; callers should guard with is_intraday() first.
             Period::Min1 | Period::Min5 | Period::Min15 | Period::Min30 | Period::Min60 => "1d",
             Period::Day1   => "1d",
             Period::Week1  => "5d",
@@ -48,7 +50,9 @@ impl Period {
         }
     }
 
-    /// AkShare period string for stock_zh_a_minute and stock_zh_a_hist
+    /// AkShare period string for `stock_zh_a_minute` and `stock_zh_a_hist`.
+    /// For periods longer than weekly, AkShare uses `"monthly"` granularity;
+    /// the date-range window (not this string) controls how far back data is fetched.
     pub fn akshare_period(&self) -> &'static str {
         match self {
             Period::Min1  => "1",
@@ -101,13 +105,13 @@ mod tests {
 
     #[test]
     fn test_is_intraday() {
-        assert!(Period::Min1.is_intraday());
-        assert!(Period::Min5.is_intraday());
-        assert!(Period::Min15.is_intraday());
-        assert!(Period::Min30.is_intraday());
-        assert!(Period::Min60.is_intraday());
-        assert!(!Period::Day1.is_intraday());
-        assert!(!Period::Week1.is_intraday());
+        for p in [Period::Min1, Period::Min5, Period::Min15, Period::Min30, Period::Min60] {
+            assert!(p.is_intraday(), "{p:?} should be intraday");
+        }
+        for p in [Period::Day1, Period::Week1, Period::Month1, Period::Month3,
+                  Period::Month6, Period::Year1, Period::Year5] {
+            assert!(!p.is_intraday(), "{p:?} should not be intraday");
+        }
     }
 
     #[test]
