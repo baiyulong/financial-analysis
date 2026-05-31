@@ -7,6 +7,10 @@ default_currency = "CNY"
 [api_keys]
 # alpha_vantage = "YOUR_KEY_HERE"
 
+[data_source]
+provider = "sina"
+akshare_url = "http://127.0.0.1:8080"
+
 # A股大盘指数 (使用 sh/sz 前缀区分交易所)
 [[watchlist]]
 symbol = "sh000001"

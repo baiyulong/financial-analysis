@@ -40,15 +40,47 @@ fn build_router(kind: DataSourceKind, akshare_url: &str) -> ProviderRouter {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let cfg = config::Config::load()?;
-
-    let initial_state = State {
+fn build_initial_state(cfg: &config::Config) -> State {
+    let mut state = State {
         watchlist: cfg.to_watchlist_symbols(),
         portfolio: cfg.to_portfolio(),
         ..Default::default()
     };
+
+    if let Some(ref provider_str) = cfg.data_source.provider {
+        state.data_source = match provider_str.as_str() {
+            "akshare" => DataSourceKind::AkShare,
+            _ => DataSourceKind::Sina,
+        };
+    }
+    if let Some(ref url) = cfg.data_source.akshare_url {
+        state.akshare_url = url.clone();
+    }
+
+    state
+}
+
+fn router_config_after_action(
+    state: &mut State,
+    action: AppAction,
+) -> Option<(DataSourceKind, String)> {
+    let should_capture = matches!(action, AppAction::SettingsSaved)
+        && matches!(state.screen, AppScreen::Settings(_));
+
+    state.apply(action);
+
+    if should_capture {
+        Some((state.data_source.clone(), state.akshare_url.clone()))
+    } else {
+        None
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cfg = config::Config::load()?;
+
+    let initial_state = build_initial_state(&cfg);
     let router = Arc::new(RwLock::new(Arc::new(build_router(
         initial_state.data_source.clone(),
         &initial_state.akshare_url,
@@ -191,8 +223,6 @@ async fn run_app(
                         AppAction::UpdateAddInput(_) | AppAction::BackspaceAdd
                     );
 
-                    let needs_router_rebuild = matches!(&action, AppAction::SettingsSaved);
-
                     let (symbol_period, backtest_params, search_query, router_config, should_quit) = {
                         let mut state = app_state.write().await;
                         let is_already_running = if needs_backtest_run {
@@ -204,7 +234,7 @@ async fn run_app(
                         } else {
                             false
                         };
-                        state.apply(action);
+                        let router_config = router_config_after_action(&mut state, action);
                         let sp = if needs_ohlcv_fetch {
                             if let AppScreen::Chart(cs) = &state.screen {
                                 Some((cs.symbol.clone(), cs.period))
@@ -228,17 +258,28 @@ async fn run_app(
                         } else {
                             None
                         };
-                        let rc = if needs_router_rebuild {
-                            Some((state.data_source.clone(), state.akshare_url.clone()))
-                        } else {
-                            None
-                        };
-                        (sp, bp, sq, rc, state.should_quit)
+                        (sp, bp, sq, router_config, state.should_quit)
                     }; // write lock released here
 
                     if let Some((kind, akshare_url)) = router_config {
-                        let mut guard = router.write().unwrap();
-                        *guard = Arc::new(build_router(kind, &akshare_url));
+                        let provider_str = match &kind {
+                            DataSourceKind::Sina => "sina",
+                            DataSourceKind::AkShare => "akshare",
+                        };
+                        {
+                            let mut guard = router.write().unwrap();
+                            *guard = Arc::new(build_router(kind, &akshare_url));
+                        }
+                        if let Err(err) =
+                            config::Config::save_data_source(provider_str, &akshare_url)
+                        {
+                            let _ = tx
+                                .send(AppAction::StatusMessage(format!(
+                                    "[!] 保存数据源配置失败: {}",
+                                    err
+                                )))
+                                .await;
+                        }
                     }
 
                     if let Some((symbol, period)) = symbol_period {
@@ -328,6 +369,32 @@ mod tests {
     use super::*;
     use fa_core::Market;
     use std::sync::{Arc, RwLock};
+
+    #[test]
+    fn build_initial_state_applies_persisted_data_source_config() {
+        let cfg: crate::config::Config = toml::from_str(
+            r#"
+[data_source]
+provider = "akshare"
+akshare_url = "http://127.0.0.1:9000"
+"#,
+        )
+        .unwrap();
+
+        let state = build_initial_state(&cfg);
+
+        assert_eq!(state.data_source, DataSourceKind::AkShare);
+        assert_eq!(state.akshare_url, "http://127.0.0.1:9000");
+    }
+
+    #[test]
+    fn settings_saved_outside_settings_screen_does_not_rebuild_router() {
+        let mut state = State::default();
+        let router_config = router_config_after_action(&mut state, AppAction::SettingsSaved);
+
+        assert!(router_config.is_none());
+        assert_eq!(state.data_source, DataSourceKind::Sina);
+    }
 
     #[test]
     fn build_router_supports_us_stocks_for_sina_mode() {
