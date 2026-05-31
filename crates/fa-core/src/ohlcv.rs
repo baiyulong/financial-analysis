@@ -76,6 +76,24 @@ impl Period {
         )
     }
 
+    /// Yahoo Finance range string for "load more history" requests.
+    /// Extends the lookback window while keeping the same `yahoo_interval()`.
+    pub fn extended_yahoo_range(&self) -> &'static str {
+        match self {
+            Period::Month1 | Period::Month3 | Period::Month6 | Period::Year1 => "5y",
+            Period::Year5 => "max",
+            // Intraday and sub-daily periods: Yahoo doesn't provide deep history
+            _ => self.yahoo_range(),
+        }
+    }
+
+    /// True if fetching more historical data is meaningful for this period.
+    /// Daily+ charts (Month1…Year5) support extended range.
+    /// Intraday and Day1/Week1 charts have limited history in Yahoo Finance.
+    pub fn can_extend_history(&self) -> bool {
+        !self.is_intraday() && !matches!(self, Period::Day1 | Period::Week1)
+    }
+
     /// Short human-readable label for TUI display.
     pub fn label(&self) -> &'static str {
         match self {
@@ -130,6 +148,34 @@ mod tests {
         ] {
             assert!(!p.is_intraday(), "{p:?} should not be intraday");
         }
+    }
+
+    #[test]
+    fn test_can_extend_history() {
+        for p in [Period::Min1, Period::Min5, Period::Day1, Period::Week1] {
+            assert!(!p.can_extend_history(), "{p:?} should not support extended history");
+        }
+        for p in [
+            Period::Month1,
+            Period::Month3,
+            Period::Month6,
+            Period::Year1,
+            Period::Year5,
+        ] {
+            assert!(p.can_extend_history(), "{p:?} should support extended history");
+        }
+    }
+
+    #[test]
+    fn test_extended_yahoo_range() {
+        assert_eq!(Period::Month1.extended_yahoo_range(), "5y");
+        assert_eq!(Period::Month3.extended_yahoo_range(), "5y");
+        assert_eq!(Period::Month6.extended_yahoo_range(), "5y");
+        assert_eq!(Period::Year1.extended_yahoo_range(), "5y");
+        assert_eq!(Period::Year5.extended_yahoo_range(), "max");
+        // Non-extendable periods return their default range
+        assert_eq!(Period::Day1.extended_yahoo_range(), Period::Day1.yahoo_range());
+        assert_eq!(Period::Min1.extended_yahoo_range(), Period::Min1.yahoo_range());
     }
 
     #[test]

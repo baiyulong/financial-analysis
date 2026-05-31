@@ -83,6 +83,23 @@ impl DataProvider for ProviderRouter {
         Err(DataError::Network("all providers failed for OHLCV".into()))
     }
 
+    async fn fetch_ohlcv_extended(
+        &self,
+        symbol: &Symbol,
+        period: Period,
+    ) -> Result<Vec<OHLCV>, DataError> {
+        let candidates = self.providers_for(&symbol.market);
+        for provider in candidates {
+            match provider.fetch_ohlcv_extended(symbol, period).await {
+                Ok(data) => return Ok(data),
+                Err(_) => continue,
+            }
+        }
+        Err(DataError::Network(
+            "all providers failed for extended OHLCV".into(),
+        ))
+    }
+
     fn name(&self) -> &'static str {
         "ProviderRouter"
     }

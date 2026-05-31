@@ -107,9 +107,12 @@ pub struct ChartState {
     pub bar_width: u16,
     pub ma_periods: Vec<usize>,
     pub loading: bool,
-    /// Set by `ChartLoadMoreHistory` so that `ChartDataLoaded` can place
+    /// Set by `ChartLoadMoreHistory` so that `ChartDataLoaded` places
     /// the cursor at the oldest bar (index 0) instead of the newest.
     pub is_load_more: bool,
+    /// True after the first "load more history" fetch; the next fetch uses
+    /// `extended_yahoo_range()` instead of `yahoo_range()`.
+    pub history_extended: bool,
 }
 
 impl ChartState {
@@ -123,6 +126,7 @@ impl ChartState {
             ma_periods: vec![5, 10, 20],
             loading: true,
             is_load_more: false,
+            history_extended: false,
         }
     }
 
@@ -437,12 +441,14 @@ impl State {
                     cs.period = period;
                     cs.loading = true;
                     cs.data.clear();
+                    cs.history_extended = false;
                 }
             }
             AppAction::ChartLoadMoreHistory => {
                 if let AppScreen::Chart(ref mut cs) = self.screen {
-                    if let Some(longer) = next_longer_period(&cs.period) {
-                        cs.period = longer;
+                    // Only extend if the period supports it and we haven't already extended.
+                    if cs.period.can_extend_history() && !cs.history_extended {
+                        cs.history_extended = true;
                         cs.loading = true;
                         cs.data.clear();
                         cs.cursor = 0;
@@ -932,6 +938,7 @@ mod tests {
             ma_periods: vec![5],
             loading: false,
             is_load_more: false,
+            history_extended: false,
         });
         s.apply(AppAction::ChartMoveCursor(-1));
         if let AppScreen::Chart(ref cs) = s.screen {
@@ -988,6 +995,7 @@ mod tests {
             ma_periods: vec![5],
             loading: false,
             is_load_more: false,
+            history_extended: false,
         });
         s.apply(AppAction::ChartChangePeriod(Period::Year1));
         if let AppScreen::Chart(ref cs) = s.screen {
@@ -1148,20 +1156,22 @@ mod tests {
     }
 
     #[test]
-    fn test_chart_load_more_history_upgrades_period_and_resets() {
+    fn test_chart_load_more_history_sets_extended_flag() {
         use fa_core::{Market, Period};
         let mut s = State::default();
+        // Month1 supports extended history
         s.screen = AppScreen::Chart(ChartState::new(
             Symbol::new("AAPL", Market::USStock),
-            Period::Day1,
+            Period::Month1,
         ));
         if let AppScreen::Chart(ref mut cs) = s.screen {
-            cs.cursor = 0;
             cs.loading = false;
         }
         s.apply(AppAction::ChartLoadMoreHistory);
         if let AppScreen::Chart(ref cs) = s.screen {
-            assert_eq!(cs.period, Period::Week1);
+            // Period must NOT change — only history_extended flag is set
+            assert_eq!(cs.period, Period::Month1);
+            assert!(cs.history_extended);
             assert!(cs.loading);
             assert!(cs.data.is_empty());
             assert_eq!(cs.cursor, 0);
@@ -1171,20 +1181,87 @@ mod tests {
     }
 
     #[test]
-    fn test_chart_load_more_history_noop_at_max_period() {
+    fn test_chart_load_more_history_noop_for_day1() {
         use fa_core::{Market, Period};
         let mut s = State::default();
+        // Day1 does not support extended history (Yahoo intraday range)
         s.screen = AppScreen::Chart(ChartState::new(
             Symbol::new("AAPL", Market::USStock),
-            Period::Year5,
+            Period::Day1,
         ));
         if let AppScreen::Chart(ref mut cs) = s.screen {
             cs.loading = false;
         }
         s.apply(AppAction::ChartLoadMoreHistory);
         if let AppScreen::Chart(ref cs) = s.screen {
+            assert_eq!(cs.period, Period::Day1);
+            assert!(!cs.history_extended, "Day1 should not set history_extended");
+            assert!(!cs.loading, "no-op: loading should remain false");
+        } else {
+            panic!("Expected Chart screen");
+        }
+    }
+
+    #[test]
+    fn test_chart_load_more_history_noop_when_already_extended() {
+        use fa_core::{Market, Period};
+        let mut s = State::default();
+        s.screen = AppScreen::Chart(ChartState::new(
+            Symbol::new("AAPL", Market::USStock),
+            Period::Month1,
+        ));
+        if let AppScreen::Chart(ref mut cs) = s.screen {
+            cs.loading = false;
+            cs.history_extended = true; // simulate already extended
+        }
+        s.apply(AppAction::ChartLoadMoreHistory);
+        if let AppScreen::Chart(ref cs) = s.screen {
+            // Second press is a no-op
+            assert!(!cs.loading, "no-op: should not trigger another fetch");
+        } else {
+            panic!("Expected Chart screen");
+        }
+    }
+
+    #[test]
+    fn test_chart_change_period_resets_history_extended() {
+        use fa_core::{Market, Period};
+        let mut s = State::default();
+        s.screen = AppScreen::Chart(ChartState::new(
+            Symbol::new("AAPL", Market::USStock),
+            Period::Month1,
+        ));
+        if let AppScreen::Chart(ref mut cs) = s.screen {
+            cs.loading = false;
+            cs.history_extended = true;
+        }
+        s.apply(AppAction::ChartChangePeriod(Period::Year1));
+        if let AppScreen::Chart(ref cs) = s.screen {
+            assert_eq!(cs.period, Period::Year1);
+            assert!(!cs.history_extended, "ChartChangePeriod must reset history_extended");
+        } else {
+            panic!("Expected Chart screen");
+        }
+    }
+
+    #[test]
+    fn test_chart_load_more_history_noop_when_already_at_max_extended() {
+        use fa_core::{Market, Period};
+        let mut s = State::default();
+        // Year5 with history_extended=true: already at the maximum (extended_yahoo_range="max")
+        // A second ChartLoadMoreHistory should be a no-op.
+        s.screen = AppScreen::Chart(ChartState::new(
+            Symbol::new("AAPL", Market::USStock),
+            Period::Year5,
+        ));
+        if let AppScreen::Chart(ref mut cs) = s.screen {
+            cs.loading = false;
+            cs.history_extended = true; // already extended
+        }
+        s.apply(AppAction::ChartLoadMoreHistory);
+        if let AppScreen::Chart(ref cs) = s.screen {
             assert_eq!(cs.period, Period::Year5);
-            assert!(!cs.loading);
+            assert!(!cs.loading, "second load-more press should be no-op");
         } else {
             panic!("Expected Chart screen");
         }
@@ -1195,7 +1272,11 @@ mod tests {
         use fa_core::{Market, Period};
         let mut s = State::default();
         let sym = Symbol::new("AAPL", Market::USStock);
-        s.screen = AppScreen::Chart(ChartState::new(sym.clone(), Period::Day1));
+        // Month1 supports extended history, so ChartLoadMoreHistory sets is_load_more=true
+        s.screen = AppScreen::Chart(ChartState::new(sym.clone(), Period::Month1));
+        if let AppScreen::Chart(ref mut cs) = s.screen {
+            cs.loading = false; // allow ChartLoadMoreHistory to trigger
+        }
         s.apply(AppAction::ChartLoadMoreHistory);
         let dummy_ohlcv = make_dummy_ohlcv(sym.clone(), 50);
         s.apply(AppAction::ChartDataLoaded(dummy_ohlcv));

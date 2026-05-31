@@ -440,6 +440,7 @@ mod tests {
             ma_periods: vec![],
             loading: false,
             is_load_more: false,
+            history_extended: false,
         }
     }
 

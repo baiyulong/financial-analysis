@@ -207,6 +207,8 @@ async fn run_app(
                             | AppAction::ChartChangePeriod(_)
                             | AppAction::ChartLoadMoreHistory
                     );
+                    let is_load_more_request =
+                        matches!(&action, AppAction::ChartLoadMoreHistory);
                     let needs_backtest_run = matches!(&action, AppAction::RunBacktest);
                     let needs_search = matches!(
                         &action,
@@ -236,7 +238,13 @@ async fn run_app(
                         let router_config = router_config_after_action(&mut state, action);
                         let sp = if needs_ohlcv_fetch {
                             if let AppScreen::Chart(cs) = &state.screen {
-                                Some((cs.symbol.clone(), cs.period))
+                                // Use extended fetch if this was a load-more request that
+                                // successfully set the history_extended flag.
+                                Some((
+                                    cs.symbol.clone(),
+                                    cs.period,
+                                    is_load_more_request && cs.history_extended,
+                                ))
                             } else {
                                 None
                             }
@@ -306,14 +314,19 @@ async fn run_app(
                         }
                     }
 
-                    if let Some((symbol, period)) = symbol_period {
+                    if let Some((symbol, period, is_extended)) = symbol_period {
                         let router = {
                             let guard = router.read().unwrap();
                             Arc::clone(&*guard)
                         };
                         let tx = tx.clone();
                         tokio::spawn(async move {
-                            match router.fetch_ohlcv(&symbol, period).await {
+                            let result = if is_extended {
+                                router.fetch_ohlcv_extended(&symbol, period).await
+                            } else {
+                                router.fetch_ohlcv(&symbol, period).await
+                            };
+                            match result {
                                 Ok(data) => {
                                     let _ = tx.send(AppAction::ChartDataLoaded(data)).await;
                                 }

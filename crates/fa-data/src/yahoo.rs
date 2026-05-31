@@ -177,6 +177,35 @@ impl DataProvider for YahooFinanceProvider {
         parse_ohlcv_response(&json, symbol)
     }
 
+    async fn fetch_ohlcv_extended(
+        &self,
+        symbol: &Symbol,
+        period: Period,
+    ) -> Result<Vec<OHLCV>, DataError> {
+        let ticker = symbol.yahoo_ticker();
+        let url = format!(
+            "{}/v8/finance/chart/{}?interval={}&range={}",
+            self.base_url,
+            ticker,
+            period.yahoo_interval(),
+            period.extended_yahoo_range()
+        );
+
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| DataError::Network(e.to_string()))?;
+
+        let json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| DataError::Parse(e.to_string()))?;
+
+        parse_ohlcv_response(&json, symbol)
+    }
+
     fn name(&self) -> &'static str {
         "Yahoo Finance"
     }

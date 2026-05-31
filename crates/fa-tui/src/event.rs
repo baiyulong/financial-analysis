@@ -1,4 +1,4 @@
-use crate::app::{next_longer_period, AppAction, AppScreen, AppState, DataSourceKind, State};
+use crate::app::{AppAction, AppScreen, AppState, DataSourceKind, State};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use fa_core::Period;
 use std::time::Duration;
@@ -201,12 +201,12 @@ impl EventHandler {
         }
 
         if let AppScreen::Chart(ref cs) = state.screen {
-            // Special case: left arrow at cursor==0 loads longer history (only when not loading)
+            // Special case: left arrow at cursor==0 loads more history (only when not loading)
             if code == KeyCode::Left && cs.cursor == 0 && !cs.loading {
-                return if next_longer_period(&cs.period).is_some() {
+                return if cs.period.can_extend_history() && !cs.history_extended {
                     Some(AppAction::ChartLoadMoreHistory)
                 } else {
-                    Some(AppAction::StatusMessage("已加载最长历史数据".into()))
+                    Some(AppAction::StatusMessage("已显示最多历史数据".into()))
                 };
             }
             Self::map_key_chart(code, modifiers)
