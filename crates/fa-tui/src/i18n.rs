@@ -202,8 +202,8 @@ pub static EN: Strings = Strings {
     detail_high: "High",
     detail_low: "Low",
     detail_volume: "Volume",
-    detail_vol_unit_yi: "00M lots",
-    detail_vol_unit_wan: "0k lots",
+    detail_vol_unit_yi: "100M lots",
+    detail_vol_unit_wan: "10k lots",
     chart_loading: "Loading data...",
     chart_no_data: "No data available",
     chart_help: "Source: {} | F1-F5:min | 1:day 5:wk m:mo q:qtr y:yr | ←→:scroll | []:zoom | Esc:back",
@@ -258,15 +258,84 @@ pub static EN: Strings = Strings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn check_all_fields(s: &Strings) {
+        assert!(!s.data_source_label.is_empty());
+        assert!(!s.data_source_sina.is_empty());
+        assert!(!s.updated_label.is_empty());
+        assert!(!s.refresh_label.is_empty());
+        assert!(!s.never.is_empty());
+        assert!(!s.search_prompt.is_empty());
+        assert!(!s.watchlist_title.is_empty());
+        assert!(!s.add_title_prefix.is_empty());
+        assert!(!s.portfolio_title.is_empty());
+        assert!(!s.detail_title.is_empty());
+        assert!(!s.detail_loading.is_empty());
+        assert!(!s.detail_select_hint.is_empty());
+        assert!(!s.detail_latest.is_empty());
+        assert!(!s.detail_open.is_empty());
+        assert!(!s.detail_high.is_empty());
+        assert!(!s.detail_low.is_empty());
+        assert!(!s.detail_volume.is_empty());
+        assert!(!s.detail_vol_unit_yi.is_empty());
+        assert!(!s.detail_vol_unit_wan.is_empty());
+        assert!(!s.chart_loading.is_empty());
+        assert!(!s.chart_no_data.is_empty());
+        assert!(!s.chart_help.is_empty());
+        assert!(!s.chart_data_source_prefix.is_empty());
+        assert!(!s.chart_max_history.is_empty());
+        assert!(!s.bt_config_title.is_empty());
+        assert!(!s.bt_result_title.is_empty());
+        assert!(!s.bt_trades_title.is_empty());
+        assert!(!s.bt_nav_help.is_empty());
+        assert!(!s.bt_status_idle.is_empty());
+        assert!(!s.bt_status_running.is_empty());
+        assert!(!s.bt_status_done.is_empty());
+        assert!(!s.bt_press_r.is_empty());
+        assert!(!s.bt_running_msg.is_empty());
+        assert!(!s.bt_no_trades.is_empty());
+        assert!(!s.bt_label_stock.is_empty());
+        assert!(!s.bt_label_strategy.is_empty());
+        assert!(!s.bt_label_cash.is_empty());
+        assert!(!s.bt_label_commission.is_empty());
+        assert!(!s.bt_label_slippage.is_empty());
+        assert!(!s.bt_label_period.is_empty());
+        assert!(!s.bt_label_total_return.is_empty());
+        assert!(!s.bt_label_annualized.is_empty());
+        assert!(!s.bt_label_max_drawdown.is_empty());
+        assert!(!s.bt_label_win_rate.is_empty());
+        assert!(!s.bt_label_sharpe.is_empty());
+        assert!(!s.bt_label_trades.is_empty());
+        assert!(!s.bt_label_initial.is_empty());
+        assert!(!s.bt_label_final.is_empty());
+        assert!(!s.bt_trade_date.is_empty());
+        assert!(!s.bt_trade_action.is_empty());
+        assert!(!s.bt_trade_price.is_empty());
+        assert!(!s.bt_trade_qty.is_empty());
+        assert!(!s.bt_trade_amount.is_empty());
+        assert!(!s.bt_trade_pnl.is_empty());
+        assert!(!s.bt_trade_buy.is_empty());
+        assert!(!s.bt_trade_sell.is_empty());
+        assert!(!s.settings_title.is_empty());
+        assert!(!s.settings_data_source.is_empty());
+        assert!(!s.settings_akshare_url.is_empty());
+        assert!(!s.settings_akshare_only.is_empty());
+        assert!(!s.settings_language.is_empty());
+        assert!(!s.settings_help.is_empty());
+        assert!(!s.settings_lang_zh.is_empty());
+        assert!(!s.settings_lang_en.is_empty());
+        assert!(!s.quit_title.is_empty());
+        assert!(!s.quit_yes.is_empty());
+        assert!(!s.quit_no.is_empty());
+        assert!(!s.quit_help.is_empty());
+    }
+
     #[test]
-    fn test_zh_strings_not_empty() {
-        assert!(!ZH.watchlist_title.is_empty());
-        assert!(!ZH.quit_title.is_empty());
+    fn test_zh_all_fields_non_empty() {
+        check_all_fields(&ZH);
     }
     #[test]
-    fn test_en_strings_not_empty() {
-        assert!(!EN.watchlist_title.is_empty());
-        assert!(!EN.quit_title.is_empty());
+    fn test_en_all_fields_non_empty() {
+        check_all_fields(&EN);
     }
     #[test]
     fn test_language_default_is_zh() {
