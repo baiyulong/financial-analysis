@@ -1,10 +1,10 @@
+use crate::portfolio::Portfolio;
+use crate::result::{BacktestResult, Trade, TradeAction};
+use crate::strategy::{BarContext, Signal, Strategy};
 use chrono::NaiveDate;
 use fa_core::OHLCV;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use crate::portfolio::Portfolio;
-use crate::result::{BacktestResult, Trade, TradeAction};
-use crate::strategy::{BarContext, Signal, Strategy};
 
 #[derive(Clone, Debug)]
 pub struct BacktestConfig {
@@ -40,7 +40,8 @@ impl Engine {
 
     /// Run the strategy over `all_data` (must be sorted ascending by timestamp).
     pub fn run(&self, all_data: &[OHLCV], strategy: &mut dyn Strategy) -> BacktestResult {
-        let data: Vec<&OHLCV> = all_data.iter()
+        let data: Vec<&OHLCV> = all_data
+            .iter()
             .filter(|b| {
                 let d = b.timestamp.date_naive();
                 d >= self.config.start_date && d <= self.config.end_date
@@ -60,11 +61,7 @@ impl Engine {
         let owned: Vec<OHLCV> = data.iter().map(|b| (*b).clone()).collect();
 
         for (i, _) in owned.iter().enumerate() {
-            let ctx = BarContext::new(
-                &owned[..=i],
-                portfolio.position,
-                portfolio.cash,
-            );
+            let ctx = BarContext::new(&owned[..=i], portfolio.position, portfolio.cash);
             let bar = ctx.bar;
 
             let signal = strategy.on_bar(&ctx);
@@ -74,7 +71,8 @@ impl Engine {
 
             match signal {
                 Signal::BuyAll => {
-                    if let Some((qty, _)) = portfolio.buy_all(buy_fill, self.config.commission_bps) {
+                    if let Some((qty, _)) = portfolio.buy_all(buy_fill, self.config.commission_bps)
+                    {
                         trades.push(Trade {
                             date: bar.timestamp.date_naive(),
                             action: TradeAction::Buy,
@@ -86,7 +84,9 @@ impl Engine {
                     }
                 }
                 Signal::SellAll => {
-                    if let Some((qty, _net, pnl)) = portfolio.sell_all(sell_fill, self.config.commission_bps) {
+                    if let Some((qty, _net, pnl)) =
+                        portfolio.sell_all(sell_fill, self.config.commission_bps)
+                    {
                         trades.push(Trade {
                             date: bar.timestamp.date_naive(),
                             action: TradeAction::Sell,
@@ -117,30 +117,46 @@ impl Engine {
 mod tests {
     use super::*;
     use crate::strategy::{BarContext, Signal, Strategy};
-    use fa_core::{Market, Symbol};
     use chrono::TimeZone;
+    use fa_core::{Market, Symbol};
 
     fn make_bar(close: f64, days_from_epoch: i64) -> OHLCV {
         use rust_decimal::Decimal;
         let c = Decimal::from_f64_retain(close).unwrap();
-        let ts = chrono::Utc.timestamp_opt(days_from_epoch * 86400, 0).unwrap();
+        let ts = chrono::Utc
+            .timestamp_opt(days_from_epoch * 86400, 0)
+            .unwrap();
         OHLCV {
             symbol: Symbol::new("TEST", Market::USStock),
             timestamp: ts,
-            open: c, high: c, low: c, close: c, volume: 0,
+            open: c,
+            high: c,
+            low: c,
+            close: c,
+            volume: 0,
         }
     }
 
-    struct BuyThenSell { count: usize }
+    struct BuyThenSell {
+        count: usize,
+    }
     impl Strategy for BuyThenSell {
-        fn name(&self) -> &str { "buy-then-sell" }
+        fn name(&self) -> &str {
+            "buy-then-sell"
+        }
         fn on_bar(&mut self, _ctx: &BarContext) -> Signal {
             self.count += 1;
-            if self.count == 1 { Signal::BuyAll }
-            else if self.count == 4 { Signal::SellAll }
-            else { Signal::Hold }
+            if self.count == 1 {
+                Signal::BuyAll
+            } else if self.count == 4 {
+                Signal::SellAll
+            } else {
+                Signal::Hold
+            }
         }
-        fn reset(&mut self) { self.count = 0; }
+        fn reset(&mut self) {
+            self.count = 0;
+        }
     }
 
     #[test]
@@ -176,7 +192,7 @@ mod tests {
     #[test]
     fn test_engine_date_filter_excludes_out_of_range_bars() {
         let start = NaiveDate::from_ymd_opt(1970, 1, 3).unwrap();
-        let end   = NaiveDate::from_ymd_opt(1970, 1, 10).unwrap();
+        let end = NaiveDate::from_ymd_opt(1970, 1, 10).unwrap();
         let data: Vec<OHLCV> = (0..5).map(|i| make_bar(100.0, i)).collect();
         let config = BacktestConfig {
             initial_cash: dec!(10000),

@@ -11,13 +11,22 @@ pub struct RsiStrategy {
 impl RsiStrategy {
     pub fn new(period: usize, oversold: u32, overbought: u32) -> Self {
         assert!(period > 0, "RSI period must be positive");
-        assert!(oversold < overbought, "oversold threshold must be less than overbought");
-        Self { period, oversold, overbought }
+        assert!(
+            oversold < overbought,
+            "oversold threshold must be less than overbought"
+        );
+        Self {
+            period,
+            oversold,
+            overbought,
+        }
     }
 }
 
 impl Strategy for RsiStrategy {
-    fn name(&self) -> &str { "RSI 均值回归" }
+    fn name(&self) -> &str {
+        "RSI 均值回归"
+    }
 
     fn on_bar(&mut self, ctx: &BarContext) -> Signal {
         let history = ctx.history;
@@ -44,15 +53,22 @@ impl Strategy for RsiStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use fa_core::{Market, Symbol, OHLCV};
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
-    use chrono::Utc;
 
     fn bar(close: f64) -> OHLCV {
         let c = Decimal::from_f64_retain(close).unwrap();
-        OHLCV { symbol: Symbol::new("T", Market::USStock), timestamp: Utc::now(),
-                open: c, high: c, low: c, close: c, volume: 0 }
+        OHLCV {
+            symbol: Symbol::new("T", Market::USStock),
+            timestamp: Utc::now(),
+            open: c,
+            high: c,
+            low: c,
+            close: c,
+            volume: 0,
+        }
     }
 
     fn ctx<'a>(history: &'a [OHLCV], position: i64) -> BarContext<'a> {

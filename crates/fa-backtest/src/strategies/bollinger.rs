@@ -1,6 +1,6 @@
 use crate::strategy::{BarContext, Signal, Strategy};
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::{ToPrimitive, FromPrimitive};
 
 pub struct BollingerStrategy {
     period: usize,
@@ -16,19 +16,27 @@ impl BollingerStrategy {
 }
 
 impl Strategy for BollingerStrategy {
-    fn name(&self) -> &str { "布林带" }
+    fn name(&self) -> &str {
+        "布林带"
+    }
 
     fn on_bar(&mut self, ctx: &BarContext) -> Signal {
         let history = ctx.history;
-        if history.len() < self.period { return Signal::Hold; }
-        if self.period < 2 { return Signal::Hold; }
+        if history.len() < self.period {
+            return Signal::Hold;
+        }
+        if self.period < 2 {
+            return Signal::Hold;
+        }
 
         let window = &history[history.len() - self.period..];
-        let closes_f64: Vec<f64> = window.iter()
+        let closes_f64: Vec<f64> = window
+            .iter()
             .map(|b| b.close.to_f64().unwrap_or(0.0))
             .collect();
         let mean = closes_f64.iter().sum::<f64>() / self.period as f64;
-        let variance = closes_f64.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / (self.period - 1) as f64;
+        let variance =
+            closes_f64.iter().map(|c| (c - mean).powi(2)).sum::<f64>() / (self.period - 1) as f64;
         let std = variance.sqrt();
 
         let upper = Decimal::from_f64(mean + self.std_dev * std).unwrap_or(Decimal::MAX);
@@ -49,15 +57,22 @@ impl Strategy for BollingerStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use fa_core::{Market, Symbol, OHLCV};
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
-    use chrono::Utc;
 
     fn bar(close: f64) -> OHLCV {
         let c = Decimal::from_f64_retain(close).unwrap();
-        OHLCV { symbol: Symbol::new("T", Market::USStock), timestamp: Utc::now(),
-                open: c, high: c, low: c, close: c, volume: 0 }
+        OHLCV {
+            symbol: Symbol::new("T", Market::USStock),
+            timestamp: Utc::now(),
+            open: c,
+            high: c,
+            low: c,
+            close: c,
+            volume: 0,
+        }
     }
 
     fn ctx<'a>(history: &'a [OHLCV], position: i64) -> BarContext<'a> {

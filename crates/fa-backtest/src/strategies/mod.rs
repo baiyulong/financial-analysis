@@ -32,12 +32,8 @@ impl BuiltinStrategy {
 
     pub fn to_boxed(&self) -> Box<dyn Strategy> {
         match self {
-            BuiltinStrategy::MaCross { fast, slow } => {
-                Box::new(MaCrossStrategy::new(*fast, *slow))
-            }
-            BuiltinStrategy::Rsi { period } => {
-                Box::new(rsi::RsiStrategy::new(*period, 30, 70))
-            }
+            BuiltinStrategy::MaCross { fast, slow } => Box::new(MaCrossStrategy::new(*fast, *slow)),
+            BuiltinStrategy::Rsi { period } => Box::new(rsi::RsiStrategy::new(*period, 30, 70)),
             BuiltinStrategy::Bollinger { period } => {
                 Box::new(bollinger::BollingerStrategy::new(*period, 2.0))
             }

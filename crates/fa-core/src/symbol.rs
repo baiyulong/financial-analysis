@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::Market;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Symbol {
@@ -10,7 +10,11 @@ pub struct Symbol {
 
 impl Symbol {
     pub fn new(code: impl Into<String>, market: Market) -> Self {
-        Self { code: code.into(), market, name: None }
+        Self {
+            code: code.into(),
+            market,
+            name: None,
+        }
     }
 
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
@@ -58,7 +62,11 @@ impl Symbol {
 
     /// Display code, stripping sh/sz exchange prefix if present
     pub fn display_code(&self) -> String {
-        if let Some(num) = self.code.strip_prefix("sh").or_else(|| self.code.strip_prefix("sz")) {
+        if let Some(num) = self
+            .code
+            .strip_prefix("sh")
+            .or_else(|| self.code.strip_prefix("sz"))
+        {
             num.to_string()
         } else {
             self.code.clone()

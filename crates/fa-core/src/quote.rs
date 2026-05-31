@@ -1,7 +1,7 @@
+use crate::Symbol;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use crate::Symbol;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Quote {
@@ -27,15 +27,21 @@ impl Quote {
     }
 
     pub fn change_sign(&self) -> &'static str {
-        if self.change >= Decimal::ZERO { "+" } else { "" }
+        if self.change >= Decimal::ZERO {
+            "+"
+        } else {
+            ""
+        }
     }
 
     /// Format: "+1.25 (+0.68%)"
     pub fn change_display(&self) -> String {
         format!(
             "{}{:.2} ({}{:.2}%)",
-            self.change_sign(), self.change,
-            self.change_sign(), self.change_pct
+            self.change_sign(),
+            self.change,
+            self.change_sign(),
+            self.change_pct
         )
     }
 }

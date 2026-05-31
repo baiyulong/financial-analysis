@@ -15,7 +15,7 @@ use fa_data::{
 use fa_tui::{
     app::{AppAction, AppScreen, AppState, BacktestStatus, DataSourceKind, State},
     event::EventHandler,
-    ui::{backtest, chart, detail, layout, portfolio, settings, statusbar, watchlist},
+    ui,
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{
@@ -184,24 +184,7 @@ async fn run_app(
     loop {
         {
             let state = app_state.read().await;
-            terminal.draw(|f| match &state.screen {
-                AppScreen::Main => {
-                    let areas = layout::compute(f.area());
-                    watchlist::render(f, &state, areas.watchlist);
-                    portfolio::render(f, &state, areas.portfolio);
-                    detail::render(f, &state, areas.detail);
-                    statusbar::render(f, &state, areas.statusbar, refresh_secs);
-                }
-                AppScreen::Chart(cs) => {
-                    chart::render(f, cs, f.area());
-                }
-                AppScreen::Backtest(bs) => {
-                    backtest::render(f, bs, f.area());
-                }
-                AppScreen::Settings(ss) => {
-                    settings::draw_settings(f, f.area(), ss);
-                }
-            })?;
+            terminal.draw(|f| ui::draw(f, &state, refresh_secs))?;
             if state.should_quit {
                 break;
             }

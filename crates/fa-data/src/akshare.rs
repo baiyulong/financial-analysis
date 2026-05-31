@@ -242,9 +242,15 @@ mod tests {
         let bars = parse_minute_json(&data, &sym());
         assert_eq!(bars.len(), 2);
         assert_eq!(bars[0].volume, 12345);
-        assert_eq!(bars[0].timestamp, Utc.with_ymd_and_hms(2026, 5, 30, 1, 31, 0).unwrap());
+        assert_eq!(
+            bars[0].timestamp,
+            Utc.with_ymd_and_hms(2026, 5, 30, 1, 31, 0).unwrap()
+        );
         assert_eq!(bars[1].open, Decimal::from(1805));
-        assert_eq!(bars[1].timestamp, Utc.with_ymd_and_hms(2026, 5, 30, 1, 32, 0).unwrap());
+        assert_eq!(
+            bars[1].timestamp,
+            Utc.with_ymd_and_hms(2026, 5, 30, 1, 32, 0).unwrap()
+        );
     }
 
     #[test]
@@ -264,7 +270,10 @@ mod tests {
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0].volume, 50000);
         assert_eq!(bars[0].high, Decimal::from(1820));
-        assert_eq!(bars[0].timestamp, Utc.with_ymd_and_hms(2026, 5, 29, 16, 0, 0).unwrap());
+        assert_eq!(
+            bars[0].timestamp,
+            Utc.with_ymd_and_hms(2026, 5, 29, 16, 0, 0).unwrap()
+        );
     }
 
     #[test]
@@ -339,14 +348,18 @@ mod tests {
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(body.to_string())
-            .create_async().await;
+            .create_async()
+            .await;
 
         let provider = AkShareProvider::with_base_url(server.url());
         let symbol = Symbol::new("600519", Market::AShare);
         let bars = provider.fetch_ohlcv(&symbol, Period::Min1).await.unwrap();
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0].volume, 12345);
-        assert_eq!(bars[0].timestamp, Utc.with_ymd_and_hms(2026, 5, 30, 1, 31, 0).unwrap());
+        assert_eq!(
+            bars[0].timestamp,
+            Utc.with_ymd_and_hms(2026, 5, 30, 1, 31, 0).unwrap()
+        );
         mock.assert_async().await;
     }
 
@@ -369,14 +382,18 @@ mod tests {
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(body.to_string())
-            .create_async().await;
+            .create_async()
+            .await;
 
         let provider = AkShareProvider::with_base_url(server.url());
         let symbol = Symbol::new("sh600519", Market::AShare);
         let bars = provider.fetch_ohlcv(&symbol, Period::Day1).await.unwrap();
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0].volume, 50000);
-        assert_eq!(bars[0].timestamp, Utc.with_ymd_and_hms(2026, 5, 29, 16, 0, 0).unwrap());
+        assert_eq!(
+            bars[0].timestamp,
+            Utc.with_ymd_and_hms(2026, 5, 29, 16, 0, 0).unwrap()
+        );
         mock.assert_async().await;
     }
 

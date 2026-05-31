@@ -1,7 +1,7 @@
+use crate::DataError;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
-use crate::DataError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -17,10 +17,10 @@ impl fmt::Display for Market {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Market::USStock => write!(f, "US"),
-            Market::AShare  => write!(f, "A股"),
+            Market::AShare => write!(f, "A股"),
             Market::HKStock => write!(f, "HK"),
-            Market::Crypto  => write!(f, "Crypto"),
-            Market::Forex   => write!(f, "Forex"),
+            Market::Crypto => write!(f, "Crypto"),
+            Market::Forex => write!(f, "Forex"),
         }
     }
 }
@@ -32,10 +32,12 @@ impl FromStr for Market {
         match s.to_lowercase().as_str() {
             "us" | "us_stock" | "nasdaq" | "nyse" => Ok(Market::USStock),
             "a_share" | "ashare" | "cn" | "china" => Ok(Market::AShare),
-            "hk" | "hk_stock" | "hkex"            => Ok(Market::HKStock),
-            "crypto"                               => Ok(Market::Crypto),
-            "forex" | "fx"                         => Ok(Market::Forex),
-            _ => Err(DataError::MarketNotSupported { market: s.to_string() }),
+            "hk" | "hk_stock" | "hkex" => Ok(Market::HKStock),
+            "crypto" => Ok(Market::Crypto),
+            "forex" | "fx" => Ok(Market::Forex),
+            _ => Err(DataError::MarketNotSupported {
+                market: s.to_string(),
+            }),
         }
     }
 }

@@ -1,11 +1,14 @@
 use chrono::NaiveDate;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rust_decimal::prelude::{ToPrimitive, FromPrimitive};
 use std::io::Write;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TradeAction { Buy, Sell }
+pub enum TradeAction {
+    Buy,
+    Sell,
+}
 
 #[derive(Debug, Clone)]
 pub struct Trade {
@@ -97,48 +100,80 @@ impl BacktestResult {
         let mut f = BufWriter::new(std::fs::File::create(path)?);
         writeln!(f, "date,action,price,quantity,amount,pnl")?;
         for t in &self.trades {
-            let action = match t.action { TradeAction::Buy => "buy", TradeAction::Sell => "sell" };
+            let action = match t.action {
+                TradeAction::Buy => "buy",
+                TradeAction::Sell => "sell",
+            };
             let pnl = t.pnl.map(|p| p.to_string()).unwrap_or_default();
-            writeln!(f, "{},{},{},{},{},{}", t.date, action, t.price, t.quantity, t.amount, pnl)?;
+            writeln!(
+                f,
+                "{},{},{},{},{},{}",
+                t.date, action, t.price, t.quantity, t.amount, pnl
+            )?;
         }
         Ok(())
     }
 }
 
 fn compute_max_drawdown(equity: &[Decimal]) -> Decimal {
-    if equity.is_empty() { return dec!(0); }
+    if equity.is_empty() {
+        return dec!(0);
+    }
     let mut peak = equity[0];
     let mut max_dd = dec!(0);
     for &e in equity {
-        if e > peak { peak = e; }
+        if e > peak {
+            peak = e;
+        }
         if peak > dec!(0) {
             let dd = (peak - e) / peak;
-            if dd > max_dd { max_dd = dd; }
+            if dd > max_dd {
+                max_dd = dd;
+            }
         }
     }
     -max_dd
 }
 
 fn compute_win_rate(trades: &[Trade]) -> Decimal {
-    let sells: Vec<&Trade> = trades.iter().filter(|t| t.action == TradeAction::Sell).collect();
-    if sells.is_empty() { return dec!(0); }
-    let wins = sells.iter().filter(|t| t.pnl.map(|p| p > dec!(0)).unwrap_or(false)).count();
+    let sells: Vec<&Trade> = trades
+        .iter()
+        .filter(|t| t.action == TradeAction::Sell)
+        .collect();
+    if sells.is_empty() {
+        return dec!(0);
+    }
+    let wins = sells
+        .iter()
+        .filter(|t| t.pnl.map(|p| p > dec!(0)).unwrap_or(false))
+        .count();
     Decimal::from(wins) / Decimal::from(sells.len())
 }
 
 /// Annualised Sharpe ratio using daily equity returns. Risk-free rate = 3% / 252.
 fn compute_sharpe(equity: &[Decimal]) -> Decimal {
-    if equity.len() < 2 { return dec!(0); }
-    let returns: Vec<f64> = equity.windows(2).map(|w| {
-        let prev = w[0].to_f64().unwrap_or(1.0);
-        let curr = w[1].to_f64().unwrap_or(1.0);
-        if prev == 0.0 { 0.0 } else { (curr - prev) / prev }
-    }).collect();
+    if equity.len() < 2 {
+        return dec!(0);
+    }
+    let returns: Vec<f64> = equity
+        .windows(2)
+        .map(|w| {
+            let prev = w[0].to_f64().unwrap_or(1.0);
+            let curr = w[1].to_f64().unwrap_or(1.0);
+            if prev == 0.0 {
+                0.0
+            } else {
+                (curr - prev) / prev
+            }
+        })
+        .collect();
     let n = returns.len() as f64;
     let mean = returns.iter().sum::<f64>() / n;
     let variance = returns.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (n - 1.0);
     let std_dev = variance.sqrt();
-    if std_dev == 0.0 { return dec!(0); }
+    if std_dev == 0.0 {
+        return dec!(0);
+    }
     let rf_daily = 0.03 / 252.0;
     let sharpe = (mean - rf_daily) / std_dev * 252_f64.sqrt();
     Decimal::from_f64(sharpe).unwrap_or(dec!(0))
@@ -149,13 +184,16 @@ mod tests {
     use super::*;
 
     fn make_equity(values: &[f64]) -> Vec<Decimal> {
-        values.iter().map(|v| Decimal::from_f64(*v).unwrap()).collect()
+        values
+            .iter()
+            .map(|v| Decimal::from_f64(*v).unwrap())
+            .collect()
     }
 
     #[test]
     fn test_total_return_positive() {
         let start = NaiveDate::from_ymd_opt(2023, 1, 1).unwrap();
-        let end   = NaiveDate::from_ymd_opt(2023, 12, 31).unwrap();
+        let end = NaiveDate::from_ymd_opt(2023, 12, 31).unwrap();
         let equity = make_equity(&[100_000.0, 110_000.0]);
         let r = BacktestResult::calculate(dec!(100_000), vec![], equity, start, end);
         assert_eq!(r.total_return, dec!(0.1));
@@ -171,8 +209,22 @@ mod tests {
     #[test]
     fn test_win_rate_half() {
         let trades = vec![
-            Trade { date: NaiveDate::from_ymd_opt(2023,1,1).unwrap(), action: TradeAction::Sell, price: dec!(110), quantity: 10, amount: dec!(1100), pnl: Some(dec!(100)) },
-            Trade { date: NaiveDate::from_ymd_opt(2023,2,1).unwrap(), action: TradeAction::Sell, price: dec!(90), quantity: 10, amount: dec!(900), pnl: Some(dec!(-100)) },
+            Trade {
+                date: NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+                action: TradeAction::Sell,
+                price: dec!(110),
+                quantity: 10,
+                amount: dec!(1100),
+                pnl: Some(dec!(100)),
+            },
+            Trade {
+                date: NaiveDate::from_ymd_opt(2023, 2, 1).unwrap(),
+                action: TradeAction::Sell,
+                price: dec!(90),
+                quantity: 10,
+                amount: dec!(900),
+                pnl: Some(dec!(-100)),
+            },
         ];
         assert_eq!(compute_win_rate(&trades), dec!(0.5));
     }

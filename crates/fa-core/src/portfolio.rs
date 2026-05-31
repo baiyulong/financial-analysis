@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use crate::Symbol;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use crate::Symbol;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Position {
@@ -48,12 +48,16 @@ impl Portfolio {
 
     /// prices: symbol.code → current price
     pub fn total_market_value(&self, prices: &HashMap<String, Decimal>) -> Decimal {
-        self.positions.iter().map(|p| {
-            prices.get(&p.symbol.code)
-                .copied()
-                .map(|price| p.market_value(price))
-                .unwrap_or(p.cost_basis)
-        }).sum()
+        self.positions
+            .iter()
+            .map(|p| {
+                prices
+                    .get(&p.symbol.code)
+                    .copied()
+                    .map(|price| p.market_value(price))
+                    .unwrap_or(p.cost_basis)
+            })
+            .sum()
     }
 
     pub fn total_pnl(&self, prices: &HashMap<String, Decimal>) -> Decimal {

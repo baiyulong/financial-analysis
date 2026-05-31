@@ -1,8 +1,8 @@
+use crate::sina::{SinaFinanceProvider, StockSuggestion};
 use async_trait::async_trait;
-use fa_core::{DataError, DataProvider, Market, Quote, Symbol, OHLCV, Period};
+use fa_core::{DataError, DataProvider, Market, Period, Quote, Symbol, OHLCV};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
-use crate::sina::{SinaFinanceProvider, StockSuggestion};
 
 /// Automatically selects provider by market; falls back on failure.
 pub struct ProviderRouter {
@@ -13,15 +13,25 @@ pub struct ProviderRouter {
 
 impl ProviderRouter {
     pub fn new(providers: Vec<Arc<dyn DataProvider>>) -> Self {
-        Self { providers, max_retries: 3, search_provider: SinaFinanceProvider::new() }
+        Self {
+            providers,
+            max_retries: 3,
+            search_provider: SinaFinanceProvider::new(),
+        }
     }
 
     fn providers_for(&self, market: &Market) -> Vec<&Arc<dyn DataProvider>> {
-        self.providers.iter().filter(|p| p.supports(market)).collect()
+        self.providers
+            .iter()
+            .filter(|p| p.supports(market))
+            .collect()
     }
 
     pub async fn search_stocks(&self, query: &str) -> Vec<StockSuggestion> {
-        self.search_provider.search_stocks(query).await.unwrap_or_default()
+        self.search_provider
+            .search_stocks(query)
+            .await
+            .unwrap_or_default()
     }
 }
 
@@ -30,7 +40,9 @@ impl DataProvider for ProviderRouter {
     async fn fetch_quote(&self, symbol: &Symbol) -> Result<Quote, DataError> {
         let candidates = self.providers_for(&symbol.market);
         if candidates.is_empty() {
-            return Err(DataError::MarketNotSupported { market: symbol.market.to_string() });
+            return Err(DataError::MarketNotSupported {
+                market: symbol.market.to_string(),
+            });
         }
 
         let mut last_err = DataError::Network("no providers tried".into());
@@ -71,7 +83,9 @@ impl DataProvider for ProviderRouter {
         Err(DataError::Network("all providers failed for OHLCV".into()))
     }
 
-    fn name(&self) -> &'static str { "ProviderRouter" }
+    fn name(&self) -> &'static str {
+        "ProviderRouter"
+    }
 
     fn supports(&self, market: &Market) -> bool {
         self.providers.iter().any(|p| p.supports(market))
@@ -98,8 +112,12 @@ mod tests {
         async fn fetch_ohlcv(&self, _: &Symbol, _: Period) -> Result<Vec<OHLCV>, DataError> {
             Err(DataError::Network("network error".into()))
         }
-        fn name(&self) -> &'static str { "FailProvider" }
-        fn supports(&self, _: &Market) -> bool { true }
+        fn name(&self) -> &'static str {
+            "FailProvider"
+        }
+        fn supports(&self, _: &Market) -> bool {
+            true
+        }
     }
 
     #[async_trait]
@@ -110,17 +128,27 @@ mod tests {
                 price: Decimal::from(100),
                 change: Decimal::ZERO,
                 change_pct: Decimal::ZERO,
-                open: None, high: None, low: None, volume: None,
-                market_cap: None, pe_ratio: None,
-                week_52_high: None, week_52_low: None,
-                name: None, timestamp: Utc::now(),
+                open: None,
+                high: None,
+                low: None,
+                volume: None,
+                market_cap: None,
+                pe_ratio: None,
+                week_52_high: None,
+                week_52_low: None,
+                name: None,
+                timestamp: Utc::now(),
             })
         }
         async fn fetch_ohlcv(&self, _: &Symbol, _: Period) -> Result<Vec<OHLCV>, DataError> {
             Ok(vec![])
         }
-        fn name(&self) -> &'static str { "SucceedProvider" }
-        fn supports(&self, _: &Market) -> bool { true }
+        fn name(&self) -> &'static str {
+            "SucceedProvider"
+        }
+        fn supports(&self, _: &Market) -> bool {
+            true
+        }
     }
 
     #[tokio::test]
@@ -143,10 +171,18 @@ mod tests {
         struct NoSupportProvider;
         #[async_trait]
         impl DataProvider for NoSupportProvider {
-            async fn fetch_quote(&self, _: &Symbol) -> Result<Quote, DataError> { unimplemented!() }
-            async fn fetch_ohlcv(&self, _: &Symbol, _: Period) -> Result<Vec<OHLCV>, DataError> { unimplemented!() }
-            fn name(&self) -> &'static str { "NoSupport" }
-            fn supports(&self, _: &Market) -> bool { false }
+            async fn fetch_quote(&self, _: &Symbol) -> Result<Quote, DataError> {
+                unimplemented!()
+            }
+            async fn fetch_ohlcv(&self, _: &Symbol, _: Period) -> Result<Vec<OHLCV>, DataError> {
+                unimplemented!()
+            }
+            fn name(&self) -> &'static str {
+                "NoSupport"
+            }
+            fn supports(&self, _: &Market) -> bool {
+                false
+            }
         }
         let router = ProviderRouter::new(vec![Arc::new(NoSupportProvider)]);
         let symbol = Symbol::new("AAPL", Market::USStock);

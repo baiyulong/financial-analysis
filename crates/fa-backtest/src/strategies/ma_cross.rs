@@ -15,7 +15,9 @@ impl MaCrossStrategy {
 }
 
 impl Strategy for MaCrossStrategy {
-    fn name(&self) -> &str { "双均线穿越" }
+    fn name(&self) -> &str {
+        "双均线穿越"
+    }
 
     fn on_bar(&mut self, ctx: &BarContext) -> Signal {
         let history = ctx.history;
@@ -25,11 +27,15 @@ impl Strategy for MaCrossStrategy {
         let tail = &history[history.len() - (self.slow + 1)..];
         let fast_vals = sma(tail, self.fast);
         let slow_vals = sma(tail, self.slow);
-        match (fast_vals[self.slow - 1], slow_vals[self.slow - 1],
-               fast_vals[self.slow],     slow_vals[self.slow]) {
+        match (
+            fast_vals[self.slow - 1],
+            slow_vals[self.slow - 1],
+            fast_vals[self.slow],
+            slow_vals[self.slow],
+        ) {
             (Some(pf), Some(ps), Some(cf), Some(cs)) => {
                 if pf < ps && cf > cs && ctx.position == 0 {
-                    Signal::BuyAll  // golden cross: was below, now strictly above
+                    Signal::BuyAll // golden cross: was below, now strictly above
                 } else if pf > ps && cf < cs && ctx.position > 0 {
                     Signal::SellAll // death cross: was strictly above, now below
                 } else {
@@ -45,15 +51,22 @@ impl Strategy for MaCrossStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use fa_core::{Market, Symbol, OHLCV};
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
-    use chrono::Utc;
 
     fn bar(close: f64) -> OHLCV {
         let c = Decimal::from_f64_retain(close).unwrap();
-        OHLCV { symbol: Symbol::new("T", Market::USStock), timestamp: Utc::now(),
-                open: c, high: c, low: c, close: c, volume: 0 }
+        OHLCV {
+            symbol: Symbol::new("T", Market::USStock),
+            timestamp: Utc::now(),
+            open: c,
+            high: c,
+            low: c,
+            close: c,
+            volume: 0,
+        }
     }
 
     fn ctx<'a>(history: &'a [OHLCV], position: i64) -> BarContext<'a> {
@@ -64,9 +77,7 @@ mod tests {
     fn test_golden_cross_signals_buy() {
         // fast=2, slow=3: need slow+1=4 bars
         // prices such that fast was below slow, then crosses above
-        let history: Vec<OHLCV> = vec![
-            bar(10.0), bar(10.0), bar(10.0), bar(11.0),
-        ];
+        let history: Vec<OHLCV> = vec![bar(10.0), bar(10.0), bar(10.0), bar(11.0)];
         let mut s = MaCrossStrategy::new(2, 3);
         // prev: fast(10+10)/2=10, slow(10+10+10)/3=10 → pf==ps, not pf<ps → Hold
         assert_eq!(s.on_bar(&ctx(&history, 0)), Signal::Hold);
@@ -93,9 +104,7 @@ mod tests {
     fn test_death_cross_signals_sell() {
         // Falling series: fast was above slow (or equal), then drops below
         // fast=2, slow=3, need slow+1=4 bars, position=10 (in position)
-        let history: Vec<OHLCV> = vec![
-            bar(20.0), bar(18.0), bar(15.0), bar(10.0),
-        ];
+        let history: Vec<OHLCV> = vec![bar(20.0), bar(18.0), bar(15.0), bar(10.0)];
         let mut s = MaCrossStrategy::new(2, 3);
         // fast(last 2) = (15+10)/2=12.5, slow(last 3) = (18+15+10)/3=14.33 → fast < slow
         // prev: fast(18+15)/2=16.5, slow(20+18+15)/3=17.67 → fast < slow already → Hold (no crossover)

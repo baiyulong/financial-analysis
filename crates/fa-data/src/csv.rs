@@ -17,11 +17,11 @@ pub fn load_portfolio_from_csv(content: &str) -> Result<Portfolio, DataError> {
                 fields.len()
             )));
         }
-        let code   = fields[0].trim().to_string();
+        let code = fields[0].trim().to_string();
         let market = fields[1].trim().parse::<Market>()?;
-        let qty    = Decimal::from_str(fields[2].trim())
+        let qty = Decimal::from_str(fields[2].trim())
             .map_err(|_| DataError::Parse(format!("invalid quantity: {}", fields[2])))?;
-        let cost   = Decimal::from_str(fields[3].trim())
+        let cost = Decimal::from_str(fields[3].trim())
             .map_err(|_| DataError::Parse(format!("invalid cost_basis: {}", fields[3])))?;
 
         positions.push(Position {

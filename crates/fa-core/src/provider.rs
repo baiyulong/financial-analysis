@@ -1,5 +1,5 @@
+use crate::{DataError, Market, Period, Quote, Symbol, OHLCV};
 use async_trait::async_trait;
-use crate::{DataError, Market, OHLCV, Period, Quote, Symbol};
 
 #[async_trait]
 pub trait DataProvider: Send + Sync {

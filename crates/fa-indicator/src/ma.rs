@@ -26,10 +26,10 @@ pub fn sma(data: &[OHLCV], period: usize) -> Vec<Option<Decimal>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use fa_core::{Market, Symbol, OHLCV};
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
-    use chrono::Utc;
 
     fn make_bar(close: Decimal) -> OHLCV {
         OHLCV {

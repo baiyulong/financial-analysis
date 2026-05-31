@@ -1,6 +1,6 @@
 use fa_core::OHLCV;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use rust_decimal::Decimal;
-use rust_decimal::prelude::{ToPrimitive, FromPrimitive};
 
 /// RSI using Wilder's smoothing method.
 /// Returns Vec of same length as `data`.
@@ -11,14 +11,21 @@ pub fn rsi(data: &[OHLCV], period: usize) -> Vec<Option<Decimal>> {
     }
 
     let mut result = vec![None; data.len()];
-    let closes: Vec<f64> = data.iter().map(|b| b.close.to_f64().unwrap_or(0.0)).collect();
+    let closes: Vec<f64> = data
+        .iter()
+        .map(|b| b.close.to_f64().unwrap_or(0.0))
+        .collect();
 
     // Seed: average gain/loss over first `period` changes
     let mut avg_gain: f64 = 0.0;
     let mut avg_loss: f64 = 0.0;
     for i in 1..=period {
         let change = closes[i] - closes[i - 1];
-        if change > 0.0 { avg_gain += change; } else { avg_loss += change.abs(); }
+        if change > 0.0 {
+            avg_gain += change;
+        } else {
+            avg_loss += change.abs();
+        }
     }
     avg_gain /= period as f64;
     avg_loss /= period as f64;
@@ -50,14 +57,21 @@ fn rsi_from_avg(avg_gain: f64, avg_loss: f64) -> Decimal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use fa_core::{Market, Symbol};
     use rust_decimal_macros::dec;
-    use chrono::Utc;
 
     fn bar(close: f64) -> OHLCV {
         let c = Decimal::from_f64_retain(close).unwrap();
-        OHLCV { symbol: Symbol::new("T", Market::USStock), timestamp: Utc::now(),
-                open: c, high: c, low: c, close: c, volume: 0 }
+        OHLCV {
+            symbol: Symbol::new("T", Market::USStock),
+            timestamp: Utc::now(),
+            open: c,
+            high: c,
+            low: c,
+            close: c,
+            volume: 0,
+        }
     }
 
     #[test]
@@ -71,7 +85,9 @@ mod tests {
     fn test_rsi_first_period_elements_are_none() {
         let data: Vec<OHLCV> = (0..20).map(|i| bar(100.0 + i as f64)).collect();
         let result = rsi(&data, 14);
-        for i in 0..14 { assert!(result[i].is_none(), "index {i} should be None"); }
+        for i in 0..14 {
+            assert!(result[i].is_none(), "index {i} should be None");
+        }
     }
 
     #[test]
@@ -79,7 +95,10 @@ mod tests {
         let data: Vec<OHLCV> = (0..30).map(|i| bar(100.0 + i as f64 * 2.0)).collect();
         let result = rsi(&data, 14);
         let last = result.last().unwrap().unwrap();
-        assert!(last > dec!(90), "expected RSI > 90 for all-up series, got {last}");
+        assert!(
+            last > dec!(90),
+            "expected RSI > 90 for all-up series, got {last}"
+        );
     }
 
     #[test]
@@ -87,7 +106,10 @@ mod tests {
         let data: Vec<OHLCV> = (0..30).map(|i| bar(200.0 - i as f64 * 2.0)).collect();
         let result = rsi(&data, 14);
         let last = result.last().unwrap().unwrap();
-        assert!(last < dec!(10), "expected RSI < 10 for all-down series, got {last}");
+        assert!(
+            last < dec!(10),
+            "expected RSI < 10 for all-down series, got {last}"
+        );
     }
 
     #[test]

@@ -11,10 +11,7 @@ pub struct AppLayout {
 pub fn compute(area: Rect) -> AppLayout {
     let vertical = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Min(0), Constraint::Length(1)])
         .split(area);
 
     let main_area = vertical[0];
@@ -22,10 +19,7 @@ pub fn compute(area: Rect) -> AppLayout {
 
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(30),
-            Constraint::Percentage(70),
-        ])
+        .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
         .split(main_area);
 
     let left = horizontal[0];
@@ -33,10 +27,7 @@ pub fn compute(area: Rect) -> AppLayout {
 
     let left_panels = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(left);
 
     AppLayout {

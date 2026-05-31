@@ -1,12 +1,12 @@
 // Yahoo Finance data provider
+use crate::cache::InMemoryCache;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use fa_core::{DataError, DataProvider, Market, Quote, Symbol, OHLCV, Period};
+use fa_core::{DataError, DataProvider, Market, Period, Quote, Symbol, OHLCV};
 use rust_decimal::prelude::*;
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use crate::cache::InMemoryCache;
 
 const DEFAULT_BASE_URL: &str = "https://query1.finance.yahoo.com";
 
@@ -74,7 +74,8 @@ fn f64_to_dec(v: f64) -> Decimal {
 }
 
 fn into_quote(r: YahooQuoteResult, symbol: &Symbol) -> Result<Quote, DataError> {
-    let ts = r.regular_market_time
+    let ts = r
+        .regular_market_time
         .and_then(|t| DateTime::from_timestamp(t, 0))
         .unwrap_or_else(Utc::now);
 
@@ -116,18 +117,30 @@ impl DataProvider for YahooFinanceProvider {
             self.base_url, ticker
         );
 
-        let resp = self.client.get(&url).send().await
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| DataError::Network(e.to_string()))?;
 
         if resp.status() == 429 {
             return Err(DataError::RateLimited { retry_after: 60 });
         }
 
-        let yahoo: YahooResponse = resp.json().await
+        let yahoo: YahooResponse = resp
+            .json()
+            .await
             .map_err(|e| DataError::Parse(e.to_string()))?;
 
-        let result = yahoo.quote_response.result.into_iter().next()
-            .ok_or_else(|| DataError::SymbolNotFound { symbol: symbol.code.clone() })?;
+        let result = yahoo
+            .quote_response
+            .result
+            .into_iter()
+            .next()
+            .ok_or_else(|| DataError::SymbolNotFound {
+                symbol: symbol.code.clone(),
+            })?;
 
         let quote = into_quote(result, symbol)?;
 
@@ -143,50 +156,75 @@ impl DataProvider for YahooFinanceProvider {
         let ticker = symbol.yahoo_ticker();
         let url = format!(
             "{}/v8/finance/chart/{}?interval={}&range={}",
-            self.base_url, ticker,
+            self.base_url,
+            ticker,
             period.yahoo_interval(),
             period.yahoo_range()
         );
 
-        let resp = self.client.get(&url).send().await
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
             .map_err(|e| DataError::Network(e.to_string()))?;
 
-        let json: serde_json::Value = resp.json().await
+        let json: serde_json::Value = resp
+            .json()
+            .await
             .map_err(|e| DataError::Parse(e.to_string()))?;
 
         parse_ohlcv_response(&json, symbol)
     }
 
-    fn name(&self) -> &'static str { "Yahoo Finance" }
+    fn name(&self) -> &'static str {
+        "Yahoo Finance"
+    }
 
     fn supports(&self, _market: &Market) -> bool {
         true
     }
 }
 
-fn parse_ohlcv_response(json: &serde_json::Value, symbol: &Symbol) -> Result<Vec<OHLCV>, DataError> {
+fn parse_ohlcv_response(
+    json: &serde_json::Value,
+    symbol: &Symbol,
+) -> Result<Vec<OHLCV>, DataError> {
     let result = &json["chart"]["result"][0];
-    let timestamps = result["timestamp"].as_array()
+    let timestamps = result["timestamp"]
+        .as_array()
         .ok_or_else(|| DataError::Parse("missing timestamps".into()))?;
     let quote = &result["indicators"]["quote"][0];
 
-    let opens  = quote["open"].as_array().ok_or_else(|| DataError::Parse("missing open".into()))?;
-    let highs  = quote["high"].as_array().ok_or_else(|| DataError::Parse("missing high".into()))?;
-    let lows   = quote["low"].as_array().ok_or_else(|| DataError::Parse("missing low".into()))?;
-    let closes = quote["close"].as_array().ok_or_else(|| DataError::Parse("missing close".into()))?;
-    let vols   = quote["volume"].as_array().ok_or_else(|| DataError::Parse("missing volume".into()))?;
+    let opens = quote["open"]
+        .as_array()
+        .ok_or_else(|| DataError::Parse("missing open".into()))?;
+    let highs = quote["high"]
+        .as_array()
+        .ok_or_else(|| DataError::Parse("missing high".into()))?;
+    let lows = quote["low"]
+        .as_array()
+        .ok_or_else(|| DataError::Parse("missing low".into()))?;
+    let closes = quote["close"]
+        .as_array()
+        .ok_or_else(|| DataError::Parse("missing close".into()))?;
+    let vols = quote["volume"]
+        .as_array()
+        .ok_or_else(|| DataError::Parse("missing volume".into()))?;
 
-    let bars = timestamps.iter().enumerate()
+    let bars = timestamps
+        .iter()
+        .enumerate()
         .filter_map(|(i, ts)| {
             let ts = ts.as_i64()?;
             let dt = DateTime::from_timestamp(ts, 0)?;
             Some(OHLCV {
                 symbol: symbol.clone(),
                 timestamp: dt,
-                open:   f64_to_dec(opens.get(i)?.as_f64()?),
-                high:   f64_to_dec(highs.get(i)?.as_f64()?),
-                low:    f64_to_dec(lows.get(i)?.as_f64()?),
-                close:  f64_to_dec(closes.get(i)?.as_f64()?),
+                open: f64_to_dec(opens.get(i)?.as_f64()?),
+                high: f64_to_dec(highs.get(i)?.as_f64()?),
+                low: f64_to_dec(lows.get(i)?.as_f64()?),
+                close: f64_to_dec(closes.get(i)?.as_f64()?),
                 volume: vols.get(i).and_then(|v| v.as_u64()).unwrap_or(0),
             })
         })
@@ -194,8 +232,6 @@ fn parse_ohlcv_response(json: &serde_json::Value, symbol: &Symbol) -> Result<Vec
 
     Ok(bars)
 }
-
-
 
 #[cfg(test)]
 mod tests {

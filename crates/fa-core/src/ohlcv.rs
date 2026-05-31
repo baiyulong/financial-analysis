@@ -1,7 +1,7 @@
+use crate::Symbol;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use crate::Symbol;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Period {
@@ -26,27 +26,27 @@ impl Period {
             // Minute periods are served by AkShare, not Yahoo Finance.
             // "1d" is a safe no-op fallback; callers should guard with is_intraday() first.
             Period::Min1 | Period::Min5 | Period::Min15 | Period::Min30 | Period::Min60 => "1d",
-            Period::Day1   => "1d",
-            Period::Week1  => "5d",
+            Period::Day1 => "1d",
+            Period::Week1 => "5d",
             Period::Month1 => "1mo",
             Period::Month3 => "3mo",
             Period::Month6 => "6mo",
-            Period::Year1  => "1y",
-            Period::Year5  => "5y",
+            Period::Year1 => "1y",
+            Period::Year5 => "5y",
         }
     }
 
     /// Yahoo Finance interval parameter
     pub fn yahoo_interval(&self) -> &'static str {
         match self {
-            Period::Min1   => "1m",
-            Period::Min5   => "5m",
-            Period::Min15  => "15m",
-            Period::Min30  => "30m",
-            Period::Min60  => "60m",
-            Period::Day1   => "5m",
-            Period::Week1  => "1h",
-            _              => "1d",
+            Period::Min1 => "1m",
+            Period::Min5 => "5m",
+            Period::Min15 => "15m",
+            Period::Min30 => "30m",
+            Period::Min60 => "60m",
+            Period::Day1 => "5m",
+            Period::Week1 => "1h",
+            _ => "1d",
         }
     }
 
@@ -55,37 +55,42 @@ impl Period {
     /// the date-range window (not this string) controls how far back data is fetched.
     pub fn akshare_period(&self) -> &'static str {
         match self {
-            Period::Min1  => "1",
-            Period::Min5  => "5",
+            Period::Min1 => "1",
+            Period::Min5 => "5",
             Period::Min15 => "15",
             Period::Min30 => "30",
             Period::Min60 => "60",
-            Period::Day1  => "daily",
+            Period::Day1 => "daily",
             Period::Week1 => "weekly",
-            Period::Month1 | Period::Month3 | Period::Month6 | Period::Year1 | Period::Year5 => "monthly",
+            Period::Month1 | Period::Month3 | Period::Month6 | Period::Year1 | Period::Year5 => {
+                "monthly"
+            }
         }
     }
 
     /// True for intraday (minute-level) periods.
     pub fn is_intraday(&self) -> bool {
-        matches!(self, Period::Min1 | Period::Min5 | Period::Min15 | Period::Min30 | Period::Min60)
+        matches!(
+            self,
+            Period::Min1 | Period::Min5 | Period::Min15 | Period::Min30 | Period::Min60
+        )
     }
 
     /// Short human-readable label for TUI display.
     pub fn label(&self) -> &'static str {
         match self {
-            Period::Min1  => "1分",
-            Period::Min5  => "5分",
+            Period::Min1 => "1分",
+            Period::Min5 => "5分",
             Period::Min15 => "15分",
             Period::Min30 => "30分",
             Period::Min60 => "60分",
-            Period::Day1   => "日线",
-            Period::Week1  => "周线",
+            Period::Day1 => "日线",
+            Period::Week1 => "周线",
             Period::Month1 => "月线",
             Period::Month3 => "季线",
             Period::Month6 => "半年",
-            Period::Year1  => "年线",
-            Period::Year5  => "5年",
+            Period::Year1 => "年线",
+            Period::Year5 => "5年",
         }
     }
 }
@@ -105,11 +110,24 @@ mod tests {
 
     #[test]
     fn test_is_intraday() {
-        for p in [Period::Min1, Period::Min5, Period::Min15, Period::Min30, Period::Min60] {
+        for p in [
+            Period::Min1,
+            Period::Min5,
+            Period::Min15,
+            Period::Min30,
+            Period::Min60,
+        ] {
             assert!(p.is_intraday(), "{p:?} should be intraday");
         }
-        for p in [Period::Day1, Period::Week1, Period::Month1, Period::Month3,
-                  Period::Month6, Period::Year1, Period::Year5] {
+        for p in [
+            Period::Day1,
+            Period::Week1,
+            Period::Month1,
+            Period::Month3,
+            Period::Month6,
+            Period::Year1,
+            Period::Year5,
+        ] {
             assert!(!p.is_intraday(), "{p:?} should not be intraday");
         }
     }

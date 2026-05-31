@@ -48,23 +48,33 @@ pub trait Strategy: Send {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use fa_core::{Market, Symbol, OHLCV};
     use rust_decimal_macros::dec;
-    use chrono::Utc;
 
     fn make_bar(close: Decimal) -> OHLCV {
         OHLCV {
             symbol: Symbol::new("TEST", Market::USStock),
             timestamp: Utc::now(),
-            open: close, high: close, low: close, close, volume: 0,
+            open: close,
+            high: close,
+            low: close,
+            close,
+            volume: 0,
         }
     }
 
     struct AlwaysBuy;
     impl Strategy for AlwaysBuy {
-        fn name(&self) -> &str { "always-buy" }
+        fn name(&self) -> &str {
+            "always-buy"
+        }
         fn on_bar(&mut self, ctx: &BarContext) -> Signal {
-            if ctx.position == 0 { Signal::BuyAll } else { Signal::Hold }
+            if ctx.position == 0 {
+                Signal::BuyAll
+            } else {
+                Signal::Hold
+            }
         }
     }
 
@@ -72,7 +82,12 @@ mod tests {
     fn test_strategy_trait_object() {
         let bar = make_bar(dec!(100));
         let history = vec![bar.clone()];
-        let ctx = BarContext { bar: &bar, position: 0, cash: dec!(1000), history: &history };
+        let ctx = BarContext {
+            bar: &bar,
+            position: 0,
+            cash: dec!(1000),
+            history: &history,
+        };
         let mut s: Box<dyn Strategy> = Box::new(AlwaysBuy);
         assert_eq!(s.on_bar(&ctx), Signal::BuyAll);
     }
@@ -81,7 +96,12 @@ mod tests {
     fn test_signal_hold_when_in_position() {
         let bar = make_bar(dec!(100));
         let history = vec![bar.clone()];
-        let ctx = BarContext { bar: &bar, position: 10, cash: dec!(0), history: &history };
+        let ctx = BarContext {
+            bar: &bar,
+            position: 10,
+            cash: dec!(0),
+            history: &history,
+        };
         let mut s = AlwaysBuy;
         assert_eq!(s.on_bar(&ctx), Signal::Hold);
     }

@@ -1,6 +1,6 @@
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use rust_decimal::prelude::ToPrimitive;
 
 /// Internal position/cash tracker. Not part of the public API.
 pub(crate) struct Portfolio {
@@ -12,7 +12,11 @@ pub(crate) struct Portfolio {
 
 impl Portfolio {
     pub fn new(initial_cash: Decimal) -> Self {
-        Self { cash: initial_cash, position: 0, cost_basis: dec!(0) }
+        Self {
+            cash: initial_cash,
+            position: 0,
+            cost_basis: dec!(0),
+        }
     }
 
     pub fn total_value(&self, current_price: Decimal) -> Decimal {
@@ -21,14 +25,20 @@ impl Portfolio {
 
     /// Buy as many shares as cash allows at `fill_price`.
     /// Returns (shares_bought, cost_per_share_excl_commission) or None if cannot buy.
-    pub fn buy_all(&mut self, fill_price: Decimal, commission_bps: Decimal) -> Option<(i64, Decimal)> {
+    pub fn buy_all(
+        &mut self,
+        fill_price: Decimal,
+        commission_bps: Decimal,
+    ) -> Option<(i64, Decimal)> {
         if self.cash <= dec!(0) || self.position > 0 || fill_price <= dec!(0) {
             return None;
         }
         let commission_rate = commission_bps / dec!(10000);
         let shares_dec = (self.cash / (fill_price * (dec!(1) + commission_rate))).floor();
         let shares = shares_dec.to_i64()?;
-        if shares <= 0 { return None; }
+        if shares <= 0 {
+            return None;
+        }
         let cost = fill_price * Decimal::from(shares);
         let commission = cost * commission_rate;
         self.cash -= cost + commission;
@@ -39,8 +49,14 @@ impl Portfolio {
 
     /// Sell entire position at `fill_price`.
     /// Returns (shares_sold, net_proceeds, pnl) or None if no position.
-    pub fn sell_all(&mut self, fill_price: Decimal, commission_bps: Decimal) -> Option<(i64, Decimal, Decimal)> {
-        if self.position <= 0 { return None; }
+    pub fn sell_all(
+        &mut self,
+        fill_price: Decimal,
+        commission_bps: Decimal,
+    ) -> Option<(i64, Decimal, Decimal)> {
+        if self.position <= 0 {
+            return None;
+        }
         let shares = self.position;
         let gross = fill_price * Decimal::from(shares);
         let commission = gross * commission_bps / dec!(10000);
