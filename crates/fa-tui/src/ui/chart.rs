@@ -18,6 +18,8 @@ struct KlineChart<'a> {
     cursor_in_view: usize,
     /// Pre-sliced to visible range: ma_data[k].1[i] corresponds to visible[i]
     ma_data: Vec<(Color, Vec<Option<rust_decimal::Decimal>>)>,
+    /// Most recent close price for the horizontal reference line (all data, not just visible).
+    last_close: Option<f64>,
 }
 
 impl Widget for KlineChart<'_> {
@@ -28,6 +30,17 @@ impl Widget for KlineChart<'_> {
 
         if h == 0 || w == 0 {
             return;
+        }
+
+        // ── Pass 0: Last close price horizontal reference line ────────────
+        // Drawn first so candlesticks appear on top in their cells.
+        if let Some(close) = self.last_close {
+            let row = price_to_row(close, self.y_min, self.y_max, h);
+            for x in 0..w {
+                buf[(area.x + x, area.y + row)]
+                    .set_char('─')
+                    .set_fg(Color::White);
+            }
         }
 
         // ── Pass 1: Candlestick bars ──────────────────────────────────────
@@ -453,6 +466,7 @@ fn render_chart_inner(f: &mut Frame, cs: &ChartState, strings: &'static crate::i
             bar_w: cs.bar_width,
             cursor_in_view,
             ma_data,
+            last_close: cs.data.last().and_then(|b| b.close.to_f64()),
         },
         area,
     );
@@ -619,5 +633,25 @@ mod tests {
             content.contains('─'),
             "horizontal separator ─ between chart and volume must be drawn"
         );
+    }
+
+    #[test]
+    fn test_last_close_line_appears() {
+        // With no MA lines active, any ─ inside the candle area comes from the close price line.
+        // This test verifies the close price reference line is rendered.
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let cs = make_chart_state_with_data(); // ma_periods: vec![]
+        terminal
+            .draw(|f| render(f, &cs, &DataSourceKind::Sina, &crate::i18n::ZH, f.area()))
+            .unwrap();
+        let buf = terminal.backend().buffer().clone();
+        // The last bar has close=102; with y range ~83–121 and chart_h ~18 rows,
+        // price_to_row(102) falls somewhere in the middle rows.
+        // Verify the White-colored ─ cells exist in the buffer.
+        let has_white_dash = buf.content().iter().any(|cell| {
+            cell.symbol() == "─" && cell.fg == ratatui::style::Color::White
+        });
+        assert!(has_white_dash, "last close price horizontal line (white ─) must be drawn");
     }
 }
