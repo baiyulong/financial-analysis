@@ -62,7 +62,6 @@ pub struct Strings {
     pub chart_loading: &'static str,
     pub chart_no_data: &'static str,
     pub chart_help: &'static str,
-    pub chart_data_source_prefix: &'static str,
     pub chart_max_history: &'static str,
     // ── Backtest ────────────────────────────────────────────────────
     pub bt_config_title: &'static str,
@@ -136,7 +135,6 @@ pub static ZH: Strings = Strings {
     chart_loading: "Loading data...",
     chart_no_data: "No data available",
     chart_help: "数据源: {} | F1-F5:分钟 | 1:日 5:周 m:月 q:季 y:年 | ←→:移动 | []:缩放 | Esc:返回",
-    chart_data_source_prefix: "数据源: ",
     chart_max_history: "已显示最多历史数据",
     bt_config_title: " 回测配置 ",
     bt_result_title: " 回测结果 ",
@@ -207,7 +205,6 @@ pub static EN: Strings = Strings {
     chart_loading: "Loading data...",
     chart_no_data: "No data available",
     chart_help: "Source: {} | F1-F5:min | 1:day 5:wk m:mo q:qtr y:yr | ←→:scroll | []:zoom | Esc:back",
-    chart_data_source_prefix: "Source: ",
     chart_max_history: "Max history loaded",
     bt_config_title: " Backtest Config ",
     bt_result_title: " Backtest Results ",
@@ -281,7 +278,6 @@ mod tests {
         assert!(!s.chart_loading.is_empty());
         assert!(!s.chart_no_data.is_empty());
         assert!(!s.chart_help.is_empty());
-        assert!(!s.chart_data_source_prefix.is_empty());
         assert!(!s.chart_max_history.is_empty());
         assert!(!s.bt_config_title.is_empty());
         assert!(!s.bt_result_title.is_empty());

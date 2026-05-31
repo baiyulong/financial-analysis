@@ -272,10 +272,7 @@ fn render_titlebar(f: &mut Frame, cs: &ChartState, area: Rect) {
 }
 
 fn render_statusbar(f: &mut Frame, data_source: &DataSourceKind, strings: &'static crate::i18n::Strings, area: Rect) {
-    let src_name = match data_source {
-        crate::app::DataSourceKind::Sina => strings.data_source_sina,
-        crate::app::DataSourceKind::AkShare => "AkShare",
-    };
+    let src_name = super::data_source_label(data_source, strings);
     let text = strings.chart_help.replacen("{}", src_name, 1);
     f.render_widget(
         Paragraph::new(text).style(Style::default().fg(Color::DarkGray)),
