@@ -1,3 +1,4 @@
+use crate::app::{ChartState, DataSourceKind};
 use fa_core::Period;
 use fa_indicator::sma;
 use ratatui::{
@@ -8,7 +9,6 @@ use ratatui::{
     Frame,
 };
 use rust_decimal::prelude::ToPrimitive;
-use crate::app::ChartState;
 
 struct KlineChart<'a> {
     visible: &'a [fa_core::OHLCV],
@@ -40,24 +40,28 @@ impl Widget for KlineChart<'_> {
                 break;
             }
 
-            let open     = bar.open.to_f64().unwrap_or(self.y_min);
-            let close    = bar.close.to_f64().unwrap_or(self.y_min);
+            let open = bar.open.to_f64().unwrap_or(self.y_min);
+            let close = bar.close.to_f64().unwrap_or(self.y_min);
             let body_top = open.max(close);
             let body_bot = open.min(close);
-            let high     = bar.high.to_f64().unwrap_or(body_top);
-            let low      = bar.low.to_f64().unwrap_or(body_bot);
-            let color    = if close >= open { Color::Red } else { Color::Green };
+            let high = bar.high.to_f64().unwrap_or(body_top);
+            let low = bar.low.to_f64().unwrap_or(body_bot);
+            let color = if close >= open {
+                Color::Red
+            } else {
+                Color::Green
+            };
 
-            let high_row     = price_to_row(high,     self.y_min, self.y_max, h);
-            let low_row      = price_to_row(low,      self.y_min, self.y_max, h);
+            let high_row = price_to_row(high, self.y_min, self.y_max, h);
+            let low_row = price_to_row(low, self.y_min, self.y_max, h);
             let top_body_row = price_to_row(body_top, self.y_min, self.y_max, h);
             let bot_body_row = price_to_row(body_bot, self.y_min, self.y_max, h);
 
             let center_col = inner.x + x_off + self.bar_w / 2;
             // Body occupies columns [x_off+1 .. x_off+bar_w-2], 1-cell margin each side
-            let body_left  = inner.x + x_off + 1;
+            let body_left = inner.x + x_off + 1;
             let body_right = (inner.x + x_off + self.bar_w).saturating_sub(2);
-            let max_col    = inner.x + w - 1;
+            let max_col = inner.x + w - 1;
 
             // Upper wick (high → top of body)
             for r in high_row..top_body_row {
@@ -102,7 +106,9 @@ impl Widget for KlineChart<'_> {
 
                     // Draw current point
                     if center_col < inner.x + w {
-                        buf[(center_col, inner.y + row)].set_char('─').set_fg(*color);
+                        buf[(center_col, inner.y + row)]
+                            .set_char('─')
+                            .set_fg(*color);
                     }
 
                     // Fill columns between previous center and current center
@@ -120,7 +126,9 @@ impl Widget for KlineChart<'_> {
                             } else {
                                 prev_row - ((prev_row - row) as f32 * t) as u16
                             };
-                            buf[(col, inner.y + interp_row)].set_char('─').set_fg(*color);
+                            buf[(col, inner.y + interp_row)]
+                                .set_char('─')
+                                .set_fg(*color);
                         }
                     }
 
@@ -159,7 +167,9 @@ impl Widget for VolumeChart<'_> {
             return;
         }
 
-        let max_vol = self.visible.iter()
+        let max_vol = self
+            .visible
+            .iter()
             .map(|b| b.volume)
             .max()
             .unwrap_or(1)
@@ -175,7 +185,11 @@ impl Widget for VolumeChart<'_> {
             let bar_h = (vol_ratio * h as f64).ceil() as u16;
             let bar_h = bar_h.min(h);
 
-            let color = if bar.close >= bar.open { Color::Red } else { Color::Green };
+            let color = if bar.close >= bar.open {
+                Color::Red
+            } else {
+                Color::Green
+            };
 
             let body_left = area.x + x_off + 1;
             let body_right = (area.x + x_off + self.bar_w).saturating_sub(2);
@@ -195,14 +209,15 @@ impl Widget for VolumeChart<'_> {
     }
 }
 
-pub fn render(f: &mut Frame, cs: &ChartState, area: Rect) {
+pub fn render(f: &mut Frame, cs: &ChartState, data_source: &DataSourceKind, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1),      // title bar
-            Constraint::Percentage(72), // price chart
-            Constraint::Percentage(24), // volume bars
+            Constraint::Percentage(70), // price chart
+            Constraint::Percentage(23), // volume bars
             Constraint::Length(1),      // cursor info
+            Constraint::Length(1),      // status bar
         ])
         .split(area);
 
@@ -210,6 +225,7 @@ pub fn render(f: &mut Frame, cs: &ChartState, area: Rect) {
     render_chart(f, cs, chunks[1]);
     render_volume(f, cs, chunks[2]);
     render_cursor_info(f, cs, chunks[3]);
+    render_statusbar(f, data_source, chunks[4]);
 }
 
 // NOTE: Returns English chart-axis codes (e.g. "1m", "1D").
@@ -217,18 +233,18 @@ pub fn render(f: &mut Frame, cs: &ChartState, area: Rect) {
 // Keep in sync with Period::label() when adding new Period variants.
 fn period_label(p: &Period) -> &'static str {
     match p {
-        Period::Min1   => "1m",
-        Period::Min5   => "5m",
-        Period::Min15  => "15m",
-        Period::Min30  => "30m",
-        Period::Min60  => "60m",
-        Period::Day1   => "1D",
-        Period::Week1  => "5D",
+        Period::Min1 => "1m",
+        Period::Min5 => "5m",
+        Period::Min15 => "15m",
+        Period::Min30 => "30m",
+        Period::Min60 => "60m",
+        Period::Day1 => "1D",
+        Period::Week1 => "5D",
         Period::Month1 => "1M",
         Period::Month3 => "3M",
         Period::Month6 => "6M",
-        Period::Year1  => "1Y",
-        Period::Year5  => "5Y",
+        Period::Year1 => "1Y",
+        Period::Year5 => "5Y",
     }
 }
 
@@ -245,13 +261,23 @@ fn visible_window(cs: &ChartState, inner_w: usize) -> (usize, usize) {
 
 fn render_titlebar(f: &mut Frame, cs: &ChartState, area: Rect) {
     let text = format!(
-        " {}  {}  | [1]1D [5]5D [m]1M [q]3M [y]1Y  [←→]光标  [[]缩放  [Esc]返回",
+        " {}  {} ",
         cs.symbol.display_code(),
-        period_label(&cs.period),
+        period_label(&cs.period)
     );
     f.render_widget(
-        Paragraph::new(text)
-            .style(Style::default().fg(Color::White).bg(Color::DarkGray)),
+        Paragraph::new(text).style(Style::default().fg(Color::White).bg(Color::DarkGray)),
+        area,
+    );
+}
+
+fn render_statusbar(f: &mut Frame, data_source: &DataSourceKind, area: Rect) {
+    let text = format!(
+        " 数据源: {} | F1-F5:分钟 | 1:日 5:周 m:月 q:季 y:年 | ←→:移动 | []:缩放 | Esc:返回 ",
+        super::data_source_label(data_source)
+    );
+    f.render_widget(
+        Paragraph::new(text).style(Style::default().fg(Color::DarkGray)),
         area,
     );
 }
@@ -269,7 +295,11 @@ fn price_to_row(price: f64, y_min: f64, y_max: f64, height: u16) -> u16 {
 
 fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
     if cs.loading || cs.data.is_empty() {
-        let msg = if cs.loading { "Loading data..." } else { "No data available" };
+        let msg = if cs.loading {
+            "Loading data..."
+        } else {
+            "No data available"
+        };
         f.render_widget(
             Paragraph::new(msg)
                 .block(Block::default().borders(Borders::ALL))
@@ -284,10 +314,12 @@ fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
     let (start, end) = visible_window(cs, inner_w);
     let visible = &cs.data[start..end];
 
-    let price_min = visible.iter()
+    let price_min = visible
+        .iter()
         .filter_map(|b| b.low.to_f64())
         .fold(f64::MAX, f64::min);
-    let price_max = visible.iter()
+    let price_max = visible
+        .iter()
         .filter_map(|b| b.high.to_f64())
         .fold(f64::MIN, f64::max);
 
@@ -295,11 +327,13 @@ fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
     let y_min = price_min - padding;
     let y_max = price_max + padding;
 
-    let ma_configs: &[(usize, Color)] = &[(5, Color::Yellow), (10, Color::Cyan), (20, Color::Magenta)];
+    let ma_configs: &[(usize, Color)] =
+        &[(5, Color::Yellow), (10, Color::Cyan), (20, Color::Magenta)];
     let cursor_in_view = cs.cursor.saturating_sub(start);
 
     // Pre-slice MA to visible window to keep Widget stateless
-    let ma_data: Vec<(Color, Vec<Option<rust_decimal::Decimal>>)> = ma_configs.iter()
+    let ma_data: Vec<(Color, Vec<Option<rust_decimal::Decimal>>)> = ma_configs
+        .iter()
         .filter(|&&(period, _)| cs.ma_periods.contains(&period))
         .map(|&(period, color)| {
             let all_ma = sma(&cs.data, period);
@@ -310,7 +344,14 @@ fn render_chart(f: &mut Frame, cs: &ChartState, area: Rect) {
         .collect();
 
     f.render_widget(
-        KlineChart { visible, y_min, y_max, bar_w: cs.bar_width, cursor_in_view, ma_data },
+        KlineChart {
+            visible,
+            y_min,
+            y_max,
+            bar_w: cs.bar_width,
+            cursor_in_view,
+            ma_data,
+        },
         area,
     );
 }
@@ -325,7 +366,13 @@ fn render_volume(f: &mut Frame, cs: &ChartState, area: Rect) {
     let (start, end) = visible_window(cs, inner_w);
     let visible = &cs.data[start..end];
 
-    f.render_widget(VolumeChart { visible, bar_w: cs.bar_width }, area);
+    f.render_widget(
+        VolumeChart {
+            visible,
+            bar_w: cs.bar_width,
+        },
+        area,
+    );
 }
 
 fn render_cursor_info(f: &mut Frame, cs: &ChartState, area: Rect) {
@@ -339,8 +386,12 @@ fn render_cursor_info(f: &mut Frame, cs: &ChartState, area: Rect) {
         format!(
             " {}  开:{:.2}  高:{:.2}  低:{:.2}  收:{:.2}  {}{:.2}%",
             bar.timestamp.format("%Y-%m-%d"),
-            bar.open, bar.high, bar.low, bar.close,
-            sign, change_pct,
+            bar.open,
+            bar.high,
+            bar.low,
+            bar.close,
+            sign,
+            change_pct,
         )
     } else {
         " 无数据".to_string()
@@ -355,10 +406,10 @@ fn render_cursor_info(f: &mut Frame, cs: &ChartState, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::ChartState;
+    use crate::app::{ChartState, DataSourceKind};
+    use chrono::Utc;
     use fa_core::{Market, Period, Symbol, OHLCV};
     use ratatui::{backend::TestBackend, Terminal};
-    use chrono::Utc;
     use rust_decimal::Decimal;
 
     fn make_chart_state_loading() -> ChartState {
@@ -370,9 +421,9 @@ mod tests {
         let bar = |o: i64, h: i64, l: i64, c: i64| OHLCV {
             symbol: sym.clone(),
             timestamp: Utc::now(),
-            open:  Decimal::from(o),
-            high:  Decimal::from(h),
-            low:   Decimal::from(l),
+            open: Decimal::from(o),
+            high: Decimal::from(h),
+            low: Decimal::from(l),
             close: Decimal::from(c),
             volume: 1000,
         };
@@ -381,8 +432,8 @@ mod tests {
             period: Period::Month1,
             data: vec![
                 bar(100, 110, 90, 105),
-                bar(105, 115, 95,  98),
-                bar( 98, 108, 88, 102),
+                bar(105, 115, 95, 98),
+                bar(98, 108, 88, 102),
             ],
             cursor: 2,
             bar_width: 3,
@@ -406,7 +457,9 @@ mod tests {
         let backend = TestBackend::new(120, 30);
         let mut terminal = Terminal::new(backend).unwrap();
         let cs = make_chart_state_loading();
-        terminal.draw(|f| render(f, &cs, f.area())).unwrap();
+        terminal
+            .draw(|f| render(f, &cs, &DataSourceKind::Sina, f.area()))
+            .unwrap();
         let buf = terminal.backend().buffer().clone();
         let content: String = buf.content().iter().map(|c| c.symbol()).collect();
         assert!(content.contains("AAPL") || content.contains("Loading"));
@@ -417,7 +470,9 @@ mod tests {
         let backend = TestBackend::new(120, 30);
         let mut terminal = Terminal::new(backend).unwrap();
         let cs = make_chart_state_with_data();
-        terminal.draw(|f| render(f, &cs, f.area())).unwrap();
+        terminal
+            .draw(|f| render(f, &cs, &DataSourceKind::Sina, f.area()))
+            .unwrap();
         let buf = terminal.backend().buffer().clone();
         let content: String = buf.content().iter().map(|c| c.symbol()).collect();
         assert!(content.contains("AAPL"));

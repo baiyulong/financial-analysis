@@ -89,6 +89,17 @@ impl EventHandler {
             (KeyCode::Right, _) => Some(AppAction::ChartMoveCursor(1)),
             (KeyCode::Char('['), KeyModifiers::NONE) => Some(AppAction::ChartZoom(false)),
             (KeyCode::Char(']'), KeyModifiers::NONE) => Some(AppAction::ChartZoom(true)),
+            (KeyCode::F(1), KeyModifiers::NONE) => Some(AppAction::ChartChangePeriod(Period::Min1)),
+            (KeyCode::F(2), KeyModifiers::NONE) => Some(AppAction::ChartChangePeriod(Period::Min5)),
+            (KeyCode::F(3), KeyModifiers::NONE) => {
+                Some(AppAction::ChartChangePeriod(Period::Min15))
+            }
+            (KeyCode::F(4), KeyModifiers::NONE) => {
+                Some(AppAction::ChartChangePeriod(Period::Min30))
+            }
+            (KeyCode::F(5), KeyModifiers::NONE) => {
+                Some(AppAction::ChartChangePeriod(Period::Min60))
+            }
             (KeyCode::Char('1'), KeyModifiers::NONE) => {
                 Some(AppAction::ChartChangePeriod(Period::Day1))
             }
@@ -165,8 +176,7 @@ impl EventHandler {
                     Some(AppAction::SettingsNavDown)
                 }
             }
-            (KeyCode::Char(c), KeyModifiers::NONE)
-            | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+            (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
                 if ss.editing_url && ss.focused_field == 1 {
                     Some(AppAction::SettingsEditUrlChar(c))
                 } else {
@@ -342,6 +352,30 @@ mod tests {
         assert!(matches!(
             EventHandler::map_key_chart(KeyCode::Char('y'), KeyModifiers::NONE),
             Some(AppAction::ChartChangePeriod(Period::Year1))
+        ));
+    }
+
+    #[test]
+    fn test_map_key_chart_minute_period_function_keys() {
+        assert!(matches!(
+            EventHandler::map_key_chart(KeyCode::F(1), KeyModifiers::NONE),
+            Some(AppAction::ChartChangePeriod(Period::Min1))
+        ));
+        assert!(matches!(
+            EventHandler::map_key_chart(KeyCode::F(2), KeyModifiers::NONE),
+            Some(AppAction::ChartChangePeriod(Period::Min5))
+        ));
+        assert!(matches!(
+            EventHandler::map_key_chart(KeyCode::F(3), KeyModifiers::NONE),
+            Some(AppAction::ChartChangePeriod(Period::Min15))
+        ));
+        assert!(matches!(
+            EventHandler::map_key_chart(KeyCode::F(4), KeyModifiers::NONE),
+            Some(AppAction::ChartChangePeriod(Period::Min30))
+        ));
+        assert!(matches!(
+            EventHandler::map_key_chart(KeyCode::F(5), KeyModifiers::NONE),
+            Some(AppAction::ChartChangePeriod(Period::Min60))
         ));
     }
 
@@ -600,7 +634,8 @@ mod tests {
         state.screen = AppScreen::Settings(ss);
 
         assert!(
-            EventHandler::resolve_action(&state, KeyCode::Char('v'), KeyModifiers::CONTROL).is_none()
+            EventHandler::resolve_action(&state, KeyCode::Char('v'), KeyModifiers::CONTROL)
+                .is_none()
         );
     }
 
