@@ -93,6 +93,14 @@ impl Storage {
         )
     }
 
+    pub fn save_language(&self, lang: &str) -> Result<()> {
+        self.set_setting("language", lang)
+    }
+
+    pub fn load_language(&self) -> Option<String> {
+        self.get_setting("language")
+    }
+
     // ── Watchlist ─────────────────────────────────────────────────────────────
 
     pub fn load_watchlist(&self) -> Vec<Symbol> {
@@ -241,6 +249,16 @@ mod tests {
             s.load_data_source(),
             (Some("sina".into()), Some("http://127.0.0.1:8080".into()))
         );
+    }
+
+    #[test]
+    fn test_language_roundtrip() {
+        let s = in_memory();
+        assert_eq!(s.load_language(), None);
+        s.save_language("en").unwrap();
+        assert_eq!(s.load_language().as_deref(), Some("en"));
+        s.save_language("zh").unwrap();
+        assert_eq!(s.load_language().as_deref(), Some("zh"));
     }
 
     #[test]

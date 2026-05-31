@@ -49,12 +49,19 @@ fn build_initial_state(db: &Storage) -> State {
         _ => DataSourceKind::Sina,
     };
     let akshare_url = url_opt.unwrap_or_else(|| "http://127.0.0.1:8080".to_string());
+    use std::str::FromStr;
+    let language = db
+        .load_language()
+        .as_deref()
+        .and_then(|s| fa_tui::i18n::Language::from_str(s).ok())
+        .unwrap_or_default();
 
     State {
         watchlist: db.load_watchlist(),
         portfolio: db.load_portfolio(),
         data_source,
         akshare_url,
+        language,
         ..Default::default()
     }
 }
@@ -298,6 +305,10 @@ async fn run_app(
                             DataSourceKind::Sina => "sina",
                             DataSourceKind::AkShare => "akshare",
                         };
+                        let lang_str = {
+                            let state = app_state.read().await;
+                            state.language.as_str()
+                        };
                         {
                             let mut guard = router.write().unwrap();
                             *guard = Arc::new(build_router(kind, &akshare_url));
@@ -311,6 +322,7 @@ async fn run_app(
                                     )))
                                     .await;
                             }
+                            let _ = db.save_language(lang_str);
                         }
                     }
 
