@@ -201,6 +201,8 @@ pub struct State {
     pub akshare_url: String,
     pub language: crate::i18n::Language,
     pub confirm_quit: bool,
+    /// Which button in the quit-confirm dialog has focus.
+    /// `false` = Confirm/Yes button, `true` = Cancel/No button.
     pub confirm_quit_focused: bool,
 }
 
