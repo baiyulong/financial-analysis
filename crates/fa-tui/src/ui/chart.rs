@@ -227,7 +227,7 @@ fn render_chart_and_volume(f: &mut Frame, cs: &ChartState, strings: &'static cra
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    if inner.height < 6 || inner.width < 12 {
+    if inner.height < 9 || inner.width < 12 {
         return;
     }
 
@@ -592,7 +592,11 @@ mod tests {
             .unwrap();
         let buf = terminal.backend().buffer().clone();
         let content: String = buf.content().iter().map(|c| c.symbol()).collect();
-        // The │ separator between candles and Y-axis must appear
+        // '.' uniquely identifies a formatted decimal price label (e.g. " 120.75")
+        assert!(
+            content.contains('.'),
+            "Y-axis price labels (formatted floats with '.') must appear in the buffer"
+        );
         assert!(
             content.contains('│'),
             "Y-axis vertical separator │ must be drawn"
