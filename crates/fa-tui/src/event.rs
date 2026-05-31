@@ -1,8 +1,8 @@
+use crate::app::{next_longer_period, AppAction, AppScreen, AppState, DataSourceKind, State};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use fa_core::Period;
-use tokio::sync::mpsc;
 use std::time::Duration;
-use crate::app::{AppAction, AppScreen, AppState, State, next_longer_period};
+use tokio::sync::mpsc;
 
 pub struct EventHandler {
     tx: mpsc::Sender<AppAction>,
@@ -11,14 +11,19 @@ pub struct EventHandler {
 
 impl EventHandler {
     pub fn new(tx: mpsc::Sender<AppAction>) -> Self {
-        Self { tx, tick_rate: Duration::from_millis(50) }
+        Self {
+            tx,
+            tick_rate: Duration::from_millis(50),
+        }
     }
 
     /// Run the event loop. Accepts AppState to determine current screen mode
     /// and to read the selected symbol for Enter key in Main mode.
     pub async fn run(&self, state: AppState) {
         loop {
-            if self.tx.is_closed() { break; }
+            if self.tx.is_closed() {
+                break;
+            }
 
             let tick = self.tick_rate;
             let ev = tokio::task::spawn_blocking(move || {
@@ -27,12 +32,15 @@ impl EventHandler {
                 } else {
                     None
                 }
-            }).await;
+            })
+            .await;
 
             let Ok(maybe_ev) = ev else { break };
 
             let action: Option<AppAction> = match maybe_ev {
-                Some(Ok(Event::Key(KeyEvent { code, modifiers, .. }))) => {
+                Some(Ok(Event::Key(KeyEvent {
+                    code, modifiers, ..
+                }))) => {
                     let s = state.read().await;
                     Self::resolve_action(&s, code, modifiers)
                 }
@@ -52,21 +60,22 @@ impl EventHandler {
     /// Note: only intended for non-chart, non-add contexts; see `resolve_action` for routing.
     pub fn map_key_main(code: KeyCode, modifiers: KeyModifiers) -> Option<AppAction> {
         match (code, modifiers) {
-            (KeyCode::Char('q'), KeyModifiers::NONE) |
-            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(AppAction::Quit),
+            (KeyCode::Char('q'), KeyModifiers::NONE)
+            | (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(AppAction::Quit),
 
-            (KeyCode::Tab, _)    => Some(AppAction::NextPanel),
-            (KeyCode::Up, _)     => Some(AppAction::MoveUp),
-            (KeyCode::Down, _)   => Some(AppAction::MoveDown),
+            (KeyCode::Tab, _) => Some(AppAction::NextPanel),
+            (KeyCode::Up, _) => Some(AppAction::MoveUp),
+            (KeyCode::Down, _) => Some(AppAction::MoveDown),
 
             (KeyCode::Char('/'), KeyModifiers::NONE) => Some(AppAction::StartSearch),
-            (KeyCode::Esc, _)                        => Some(AppAction::CancelSearch),
+            (KeyCode::Esc, _) => Some(AppAction::CancelSearch),
             (KeyCode::Char('d'), KeyModifiers::NONE) => Some(AppAction::DeleteSelected),
             (KeyCode::Char('r'), KeyModifiers::NONE) => Some(AppAction::Refresh),
-            (KeyCode::Backspace, _)                  => Some(AppAction::BackspaceSearch),
+            (KeyCode::Backspace, _) => Some(AppAction::BackspaceSearch),
 
-            (KeyCode::Char(c), KeyModifiers::NONE) |
-            (KeyCode::Char(c), KeyModifiers::SHIFT) => Some(AppAction::UpdateSearchInput(c)),
+            (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+                Some(AppAction::UpdateSearchInput(c))
+            }
 
             _ => None,
         }
@@ -75,16 +84,26 @@ impl EventHandler {
     /// Key mappings for Chart screen (K-line view mode).
     pub fn map_key_chart(code: KeyCode, modifiers: KeyModifiers) -> Option<AppAction> {
         match (code, modifiers) {
-            (KeyCode::Esc, _)                         => Some(AppAction::ExitChart),
-            (KeyCode::Left, _)                        => Some(AppAction::ChartMoveCursor(-1)),
-            (KeyCode::Right, _)                       => Some(AppAction::ChartMoveCursor(1)),
-            (KeyCode::Char('['), KeyModifiers::NONE)  => Some(AppAction::ChartZoom(false)),
-            (KeyCode::Char(']'), KeyModifiers::NONE)  => Some(AppAction::ChartZoom(true)),
-            (KeyCode::Char('1'), KeyModifiers::NONE)  => Some(AppAction::ChartChangePeriod(Period::Day1)),
-            (KeyCode::Char('5'), KeyModifiers::NONE)  => Some(AppAction::ChartChangePeriod(Period::Week1)),
-            (KeyCode::Char('m'), KeyModifiers::NONE)  => Some(AppAction::ChartChangePeriod(Period::Month1)),
-            (KeyCode::Char('q'), KeyModifiers::NONE)  => Some(AppAction::ChartChangePeriod(Period::Month3)), // 'q' = quarter (3 months)
-            (KeyCode::Char('y'), KeyModifiers::NONE)  => Some(AppAction::ChartChangePeriod(Period::Year1)),
+            (KeyCode::Esc, _) => Some(AppAction::ExitChart),
+            (KeyCode::Left, _) => Some(AppAction::ChartMoveCursor(-1)),
+            (KeyCode::Right, _) => Some(AppAction::ChartMoveCursor(1)),
+            (KeyCode::Char('['), KeyModifiers::NONE) => Some(AppAction::ChartZoom(false)),
+            (KeyCode::Char(']'), KeyModifiers::NONE) => Some(AppAction::ChartZoom(true)),
+            (KeyCode::Char('1'), KeyModifiers::NONE) => {
+                Some(AppAction::ChartChangePeriod(Period::Day1))
+            }
+            (KeyCode::Char('5'), KeyModifiers::NONE) => {
+                Some(AppAction::ChartChangePeriod(Period::Week1))
+            }
+            (KeyCode::Char('m'), KeyModifiers::NONE) => {
+                Some(AppAction::ChartChangePeriod(Period::Month1))
+            }
+            (KeyCode::Char('q'), KeyModifiers::NONE) => {
+                Some(AppAction::ChartChangePeriod(Period::Month3))
+            } // 'q' = quarter (3 months)
+            (KeyCode::Char('y'), KeyModifiers::NONE) => {
+                Some(AppAction::ChartChangePeriod(Period::Year1))
+            }
             _ => None,
         }
     }
@@ -98,8 +117,9 @@ impl EventHandler {
             (KeyCode::Enter, _) => Some(AppAction::ConfirmAdd),
             (KeyCode::Esc, _) => Some(AppAction::CancelAdd),
             (KeyCode::Backspace, _) => Some(AppAction::BackspaceAdd),
-            (KeyCode::Char(c), KeyModifiers::NONE) |
-            (KeyCode::Char(c), KeyModifiers::SHIFT) => Some(AppAction::UpdateAddInput(c)),
+            (KeyCode::Char(c), KeyModifiers::NONE) | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+                Some(AppAction::UpdateAddInput(c))
+            }
             _ => None,
         }
     }
@@ -107,12 +127,59 @@ impl EventHandler {
     /// Key mappings for the Backtest screen.
     pub fn map_key_backtest(code: KeyCode, modifiers: KeyModifiers) -> Option<AppAction> {
         match (code, modifiers) {
-            (KeyCode::Esc, _)                        => Some(AppAction::ExitBacktest),
+            (KeyCode::Esc, _) => Some(AppAction::ExitBacktest),
             (KeyCode::Char('r'), KeyModifiers::NONE) => Some(AppAction::RunBacktest),
-            (KeyCode::Left, _)                       => Some(AppAction::BacktestPrevStrategy),
-            (KeyCode::Right, _)                      => Some(AppAction::BacktestNextStrategy),
-            (KeyCode::Up, _)                         => Some(AppAction::BacktestScrollUp),
-            (KeyCode::Down, _)                       => Some(AppAction::BacktestScrollDown),
+            (KeyCode::Left, _) => Some(AppAction::BacktestPrevStrategy),
+            (KeyCode::Right, _) => Some(AppAction::BacktestNextStrategy),
+            (KeyCode::Up, _) => Some(AppAction::BacktestScrollUp),
+            (KeyCode::Down, _) => Some(AppAction::BacktestScrollDown),
+            _ => None,
+        }
+    }
+
+    pub fn map_key_settings(
+        code: KeyCode,
+        modifiers: KeyModifiers,
+        ss: &crate::app::SettingsState,
+    ) -> Option<AppAction> {
+        match (code, modifiers) {
+            (KeyCode::Esc, _) => Some(AppAction::ExitSettings),
+            (KeyCode::Enter, _) => Some(AppAction::SettingsSaved),
+            (KeyCode::Up, _) => Some(AppAction::SettingsNavUp),
+            (KeyCode::Down, _) => Some(AppAction::SettingsNavDown),
+            (KeyCode::Char(' '), KeyModifiers::NONE) => {
+                if ss.focused_field == 0 {
+                    let next = match ss.provider {
+                        DataSourceKind::Sina => DataSourceKind::AkShare,
+                        DataSourceKind::AkShare => DataSourceKind::Sina,
+                    };
+                    Some(AppAction::SettingsSelectProvider(next))
+                } else {
+                    Some(AppAction::SettingsToggleUrlEdit)
+                }
+            }
+            (KeyCode::Tab, _) => {
+                if ss.focused_field == 1 {
+                    Some(AppAction::SettingsToggleUrlEdit)
+                } else {
+                    Some(AppAction::SettingsNavDown)
+                }
+            }
+            (KeyCode::Char(c), KeyModifiers::NONE)
+            | (KeyCode::Char(c), KeyModifiers::SHIFT) => {
+                if ss.editing_url && ss.focused_field == 1 {
+                    Some(AppAction::SettingsEditUrlChar(c))
+                } else {
+                    None
+                }
+            }
+            (KeyCode::Backspace, _) => {
+                if ss.editing_url && ss.focused_field == 1 {
+                    Some(AppAction::SettingsEditUrlBackspace)
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -135,30 +202,44 @@ impl EventHandler {
             Self::map_key_chart(code, modifiers)
         } else if matches!(state.screen, AppScreen::Backtest(_)) {
             Self::map_key_backtest(code, modifiers)
+        } else if let AppScreen::Settings(ref ss) = state.screen {
+            Self::map_key_settings(code, modifiers, ss)
         } else if state.is_add_active {
             // When search results are shown, ↑↓ navigate and Enter confirms selection
             if !state.search_results.is_empty() {
                 match (code, modifiers) {
-                    (KeyCode::Up, _)    => return Some(AppAction::SearchSelectPrev),
-                    (KeyCode::Down, _)  => return Some(AppAction::SearchSelectNext),
+                    (KeyCode::Up, _) => return Some(AppAction::SearchSelectPrev),
+                    (KeyCode::Down, _) => return Some(AppAction::SearchSelectNext),
                     (KeyCode::Enter, _) => return Some(AppAction::ConfirmSearchSelection),
-                    (KeyCode::Esc, _)   => return Some(AppAction::CancelAdd),
+                    (KeyCode::Esc, _) => return Some(AppAction::CancelAdd),
                     _ => {}
                 }
             }
             Self::map_key_add(code, modifiers)
-        } else if !state.is_search_active
+        } else if matches!(state.screen, AppScreen::Main)
+            && !state.is_search_active
             && code == KeyCode::Char('b')
             && modifiers == KeyModifiers::NONE
         {
-            state.selected_symbol().map(|sym| AppAction::StartBacktest(sym.clone()))
-        } else if !state.is_search_active
+            state
+                .selected_symbol()
+                .map(|sym| AppAction::StartBacktest(sym.clone()))
+        } else if matches!(state.screen, AppScreen::Main)
+            && !state.is_search_active
             && code == KeyCode::Char('a')
             && modifiers == KeyModifiers::NONE
         {
             Some(AppAction::StartAdd)
+        } else if matches!(state.screen, AppScreen::Main)
+            && !state.is_search_active
+            && code == KeyCode::Char('s')
+            && modifiers == KeyModifiers::NONE
+        {
+            Some(AppAction::OpenSettings)
         } else if code == KeyCode::Enter && modifiers == KeyModifiers::NONE {
-            state.selected_symbol().map(|sym| AppAction::EnterChart(sym.clone()))
+            state
+                .selected_symbol()
+                .map(|sym| AppAction::EnterChart(sym.clone()))
         } else {
             Self::map_key_main(code, modifiers)
         }
@@ -168,7 +249,7 @@ impl EventHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::State;
+    use crate::app::{AppScreen, DataSourceKind, SettingsState, State};
     use fa_core::{Market, Period, Symbol};
 
     #[test]
@@ -185,15 +266,30 @@ mod tests {
 
     #[test]
     fn test_map_navigation() {
-        assert!(matches!(EventHandler::map_key_main(KeyCode::Tab, KeyModifiers::NONE), Some(AppAction::NextPanel)));
-        assert!(matches!(EventHandler::map_key_main(KeyCode::Up, KeyModifiers::NONE), Some(AppAction::MoveUp)));
-        assert!(matches!(EventHandler::map_key_main(KeyCode::Down, KeyModifiers::NONE), Some(AppAction::MoveDown)));
+        assert!(matches!(
+            EventHandler::map_key_main(KeyCode::Tab, KeyModifiers::NONE),
+            Some(AppAction::NextPanel)
+        ));
+        assert!(matches!(
+            EventHandler::map_key_main(KeyCode::Up, KeyModifiers::NONE),
+            Some(AppAction::MoveUp)
+        ));
+        assert!(matches!(
+            EventHandler::map_key_main(KeyCode::Down, KeyModifiers::NONE),
+            Some(AppAction::MoveDown)
+        ));
     }
 
     #[test]
     fn test_map_search() {
-        assert!(matches!(EventHandler::map_key_main(KeyCode::Char('/'), KeyModifiers::NONE), Some(AppAction::StartSearch)));
-        assert!(matches!(EventHandler::map_key_main(KeyCode::Esc, KeyModifiers::NONE), Some(AppAction::CancelSearch)));
+        assert!(matches!(
+            EventHandler::map_key_main(KeyCode::Char('/'), KeyModifiers::NONE),
+            Some(AppAction::StartSearch)
+        ));
+        assert!(matches!(
+            EventHandler::map_key_main(KeyCode::Esc, KeyModifiers::NONE),
+            Some(AppAction::CancelSearch)
+        ));
     }
 
     #[test]
@@ -396,5 +492,125 @@ mod tests {
         state.screen = AppScreen::Backtest(BacktestState::new(sym));
         let action = EventHandler::resolve_action(&state, KeyCode::Char('r'), KeyModifiers::NONE);
         assert!(matches!(action, Some(AppAction::RunBacktest)));
+    }
+
+    #[test]
+    fn test_resolve_action_opens_settings_when_idle() {
+        let state = State::default();
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Char('s'), KeyModifiers::NONE),
+            Some(AppAction::OpenSettings)
+        ));
+    }
+
+    #[test]
+    fn test_resolve_action_routes_basic_keys_on_settings_screen() {
+        let mut state = State::default();
+        state.screen = AppScreen::Settings(SettingsState::new(
+            DataSourceKind::Sina,
+            "http://127.0.0.1:8080".into(),
+        ));
+
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Esc, KeyModifiers::NONE),
+            Some(AppAction::ExitSettings)
+        ));
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Enter, KeyModifiers::NONE),
+            Some(AppAction::SettingsSaved)
+        ));
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Up, KeyModifiers::NONE),
+            Some(AppAction::SettingsNavUp)
+        ));
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Down, KeyModifiers::NONE),
+            Some(AppAction::SettingsNavDown)
+        ));
+    }
+
+    #[test]
+    fn test_resolve_action_routes_space_and_tab_on_settings_screen() {
+        let mut state = State::default();
+        state.screen = AppScreen::Settings(SettingsState::new(
+            DataSourceKind::Sina,
+            "http://127.0.0.1:8080".into(),
+        ));
+
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Char(' '), KeyModifiers::NONE),
+            Some(AppAction::SettingsSelectProvider(DataSourceKind::AkShare))
+        ));
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Tab, KeyModifiers::NONE),
+            Some(AppAction::SettingsNavDown)
+        ));
+
+        if let AppScreen::Settings(ref mut ss) = state.screen {
+            ss.focused_field = 1;
+        }
+
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Char(' '), KeyModifiers::NONE),
+            Some(AppAction::SettingsToggleUrlEdit)
+        ));
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Tab, KeyModifiers::NONE),
+            Some(AppAction::SettingsToggleUrlEdit)
+        ));
+    }
+
+    #[test]
+    fn test_resolve_action_routes_url_edit_keys_on_settings_screen() {
+        let mut state = State::default();
+        let mut ss = SettingsState::new(DataSourceKind::Sina, "http://127.0.0.1:8080".into());
+        ss.focused_field = 1;
+        ss.editing_url = true;
+        state.screen = AppScreen::Settings(ss);
+
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Char('x'), KeyModifiers::NONE),
+            Some(AppAction::SettingsEditUrlChar('x'))
+        ));
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Backspace, KeyModifiers::NONE),
+            Some(AppAction::SettingsEditUrlBackspace)
+        ));
+    }
+
+    #[test]
+    fn test_resolve_action_ignores_chars_when_not_editing_settings_url() {
+        let mut state = State::default();
+        state.screen = AppScreen::Settings(SettingsState::new(
+            DataSourceKind::Sina,
+            "http://127.0.0.1:8080".into(),
+        ));
+
+        assert!(
+            EventHandler::resolve_action(&state, KeyCode::Char('x'), KeyModifiers::NONE).is_none()
+        );
+    }
+
+    #[test]
+    fn test_resolve_action_ignores_ctrl_chars_when_editing_settings_url() {
+        let mut state = State::default();
+        let mut ss = SettingsState::new(DataSourceKind::Sina, "http://127.0.0.1:8080".into());
+        ss.focused_field = 1;
+        ss.editing_url = true;
+        state.screen = AppScreen::Settings(ss);
+
+        assert!(
+            EventHandler::resolve_action(&state, KeyCode::Char('v'), KeyModifiers::CONTROL).is_none()
+        );
+    }
+
+    #[test]
+    fn test_resolve_action_keeps_search_input_for_s_when_search_active() {
+        let mut state = State::default();
+        state.is_search_active = true;
+        assert!(matches!(
+            EventHandler::resolve_action(&state, KeyCode::Char('s'), KeyModifiers::NONE),
+            Some(AppAction::UpdateSearchInput('s'))
+        ));
     }
 }
