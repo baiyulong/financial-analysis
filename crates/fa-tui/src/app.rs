@@ -1,10 +1,67 @@
 use chrono::{DateTime, Utc};
 use fa_backtest::{BacktestConfig, BacktestResult, BuiltinStrategy};
-use fa_core::{Portfolio, Quote, Symbol, OHLCV, Period};
+use fa_core::{Period, Portfolio, Quote, Symbol, OHLCV};
 use fa_data::sina::StockSuggestion;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
+/// Which OHLCV data provider to use (real-time quotes always use Sina).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum DataSourceKind {
+    #[default]
+    Sina,
+    AkShare,
+}
+
+impl DataSourceKind {
+    pub fn label(&self) -> &'static str {
+        match self {
+            DataSourceKind::Sina => "新浪 (Sina)",
+            DataSourceKind::AkShare => "AkShare (AKTools HTTP)",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SettingsState {
+    pub provider: DataSourceKind,
+    /// AKTools server URL, e.g. "http://127.0.0.1:8080"
+    pub akshare_url: String,
+    /// Which field the cursor is on: 0 = provider, 1 = URL
+    pub focused_field: usize,
+    /// Whether the URL text field is being edited
+    pub editing_url: bool,
+}
+
+impl SettingsState {
+    pub fn new(provider: DataSourceKind, akshare_url: String) -> Self {
+        Self {
+            provider,
+            akshare_url,
+            focused_field: 0,
+            editing_url: false,
+        }
+    }
+
+    pub fn field_count() -> usize {
+        2
+    }
+
+    pub fn move_up(&mut self) {
+        if self.focused_field > 0 {
+            self.focused_field -= 1;
+            self.editing_url = false;
+        }
+    }
+
+    pub fn move_down(&mut self) {
+        if self.focused_field + 1 < Self::field_count() {
+            self.focused_field += 1;
+            self.editing_url = false;
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FocusedPanel {
@@ -13,14 +70,16 @@ pub enum FocusedPanel {
 }
 
 impl Default for FocusedPanel {
-    fn default() -> Self { FocusedPanel::Watchlist }
+    fn default() -> Self {
+        FocusedPanel::Watchlist
+    }
 }
 
 impl FocusedPanel {
     pub fn next(&self) -> Self {
         match self {
-            FocusedPanel::Watchlist  => FocusedPanel::Portfolio,
-            FocusedPanel::Portfolio  => FocusedPanel::Watchlist,
+            FocusedPanel::Watchlist => FocusedPanel::Portfolio,
+            FocusedPanel::Portfolio => FocusedPanel::Watchlist,
         }
     }
 }
@@ -30,10 +89,13 @@ pub enum AppScreen {
     Main,
     Chart(ChartState),
     Backtest(BacktestState),
+    Settings(SettingsState),
 }
 
 impl Default for AppScreen {
-    fn default() -> Self { AppScreen::Main }
+    fn default() -> Self {
+        AppScreen::Main
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -99,7 +161,9 @@ impl BacktestState {
         }
     }
 
-    pub fn strategy_count() -> usize { BuiltinStrategy::all().len() }
+    pub fn strategy_count() -> usize {
+        BuiltinStrategy::all().len()
+    }
 
     pub fn strategy_name(&self) -> &'static str {
         let all = BuiltinStrategy::all();
@@ -108,10 +172,10 @@ impl BacktestState {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct State {
     pub watchlist: Vec<Symbol>,
-    pub quotes: HashMap<String, Quote>,   // key: symbol.code
+    pub quotes: HashMap<String, Quote>, // key: symbol.code
     pub portfolio: Portfolio,
     pub selected_watchlist: usize,
     pub selected_portfolio: usize,
@@ -127,6 +191,34 @@ pub struct State {
     pub search_generation: u64,
     pub should_quit: bool,
     pub screen: AppScreen,
+    pub data_source: DataSourceKind,
+    pub akshare_url: String,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            watchlist: vec![],
+            quotes: HashMap::new(),
+            portfolio: Portfolio::default(),
+            selected_watchlist: 0,
+            selected_portfolio: 0,
+            focused_panel: FocusedPanel::default(),
+            last_updated: None,
+            status_message: None,
+            is_search_active: false,
+            search_input: String::new(),
+            is_add_active: false,
+            add_input: String::new(),
+            search_results: vec![],
+            search_selected: 0,
+            search_generation: 0,
+            should_quit: false,
+            screen: AppScreen::Main,
+            data_source: DataSourceKind::Sina,
+            akshare_url: "http://127.0.0.1:8080".to_string(),
+        }
+    }
 }
 
 /// Infer market and construct Symbol from user-typed ticker input.
@@ -246,7 +338,8 @@ impl State {
             }
             AppAction::SearchSelectPrev => {
                 if !self.search_results.is_empty() {
-                    self.search_selected = self.search_selected
+                    self.search_selected = self
+                        .search_selected
                         .checked_sub(1)
                         .unwrap_or(self.search_results.len() - 1);
                 }
@@ -255,8 +348,8 @@ impl State {
                 if self.is_add_active && !self.search_results.is_empty() {
                     let suggestion = &self.search_results[self.search_selected];
                     let market = fa_core::Market::AShare;
-                    let sym = fa_core::Symbol::new(&suggestion.code, market)
-                        .with_name(&suggestion.name);
+                    let sym =
+                        fa_core::Symbol::new(&suggestion.code, market).with_name(&suggestion.name);
                     if !self.watchlist.iter().any(|s| s.code == sym.code) {
                         self.watchlist.push(sym);
                     }
@@ -283,7 +376,9 @@ impl State {
                     // Propagate name from quote to the symbol in watchlist
                     if let Some(ref name) = q.name {
                         if !name.is_empty() {
-                            if let Some(sym) = self.watchlist.iter_mut().find(|s| s.code == q.symbol.code) {
+                            if let Some(sym) =
+                                self.watchlist.iter_mut().find(|s| s.code == q.symbol.code)
+                            {
                                 sym.name = Some(name.clone());
                             }
                         }
@@ -308,7 +403,11 @@ impl State {
                     let was_load_more = cs.is_load_more;
                     let len = data.len();
                     cs.data = data;
-                    cs.cursor = if was_load_more { 0 } else { len.saturating_sub(1) };
+                    cs.cursor = if was_load_more {
+                        0
+                    } else {
+                        len.saturating_sub(1)
+                    };
                     cs.loading = false;
                     cs.is_load_more = false;
                 }
@@ -317,15 +416,17 @@ impl State {
                 if let AppScreen::Chart(ref mut cs) = self.screen {
                     let len = cs.data.len();
                     if len > 0 {
-                        cs.cursor = (cs.cursor as i64 + delta as i64)
-                            .clamp(0, len as i64 - 1) as usize;
+                        cs.cursor =
+                            (cs.cursor as i64 + delta as i64).clamp(0, len as i64 - 1) as usize;
                     }
                 }
             }
             AppAction::ChartZoom(zoom_in) => {
                 if let AppScreen::Chart(ref mut cs) = self.screen {
                     if zoom_in {
-                        if cs.bar_width < 8 { cs.bar_width += 1; }
+                        if cs.bar_width < 8 {
+                            cs.bar_width += 1;
+                        }
                     } else if cs.bar_width > 2 {
                         cs.bar_width -= 1;
                     }
@@ -398,13 +499,67 @@ impl State {
             AppAction::ExitBacktest => {
                 self.screen = AppScreen::Main;
             }
+            AppAction::OpenSettings => {
+                let ss = SettingsState::new(self.data_source.clone(), self.akshare_url.clone());
+                self.screen = AppScreen::Settings(ss);
+            }
+            AppAction::ExitSettings => {
+                if matches!(self.screen, AppScreen::Settings(_)) {
+                    self.screen = AppScreen::Main;
+                }
+            }
+            AppAction::SettingsNavUp => {
+                if let AppScreen::Settings(ref mut ss) = self.screen {
+                    ss.move_up();
+                }
+            }
+            AppAction::SettingsNavDown => {
+                if let AppScreen::Settings(ref mut ss) = self.screen {
+                    ss.move_down();
+                }
+            }
+            AppAction::SettingsSelectProvider(kind) => {
+                if let AppScreen::Settings(ref mut ss) = self.screen {
+                    ss.provider = kind;
+                }
+            }
+            AppAction::SettingsEditUrlChar(c) => {
+                if let AppScreen::Settings(ref mut ss) = self.screen {
+                    if ss.editing_url {
+                        ss.akshare_url.push(c);
+                    }
+                }
+            }
+            AppAction::SettingsEditUrlBackspace => {
+                if let AppScreen::Settings(ref mut ss) = self.screen {
+                    if ss.editing_url {
+                        ss.akshare_url.pop();
+                    }
+                }
+            }
+            AppAction::SettingsToggleUrlEdit => {
+                if let AppScreen::Settings(ref mut ss) = self.screen {
+                    if ss.focused_field == 1 {
+                        ss.editing_url = !ss.editing_url;
+                    }
+                }
+            }
+            AppAction::SettingsSaved => {
+                if let AppScreen::Settings(ref ss) = self.screen {
+                    self.data_source = ss.provider.clone();
+                    self.akshare_url = ss.akshare_url.clone();
+                    self.screen = AppScreen::Main;
+                }
+            }
         }
     }
 
     fn focused_selection_mut(&mut self) -> (&mut usize, usize) {
         match self.focused_panel {
             FocusedPanel::Watchlist => (&mut self.selected_watchlist, self.watchlist.len()),
-            FocusedPanel::Portfolio => (&mut self.selected_portfolio, self.portfolio.positions.len()),
+            FocusedPanel::Portfolio => {
+                (&mut self.selected_portfolio, self.portfolio.positions.len())
+            }
         }
     }
 
@@ -421,13 +576,13 @@ pub type AppState = Arc<RwLock<State>>;
 pub fn next_longer_period(p: &Period) -> Option<Period> {
     match p {
         Period::Min1 | Period::Min5 | Period::Min15 | Period::Min30 | Period::Min60 => None,
-        Period::Day1   => Some(Period::Week1),
-        Period::Week1  => Some(Period::Month1),
+        Period::Day1 => Some(Period::Week1),
+        Period::Week1 => Some(Period::Month1),
         Period::Month1 => Some(Period::Month3),
         Period::Month3 => Some(Period::Month6),
         Period::Month6 => Some(Period::Year1),
-        Period::Year1  => Some(Period::Year5),
-        Period::Year5  => None,
+        Period::Year1 => Some(Period::Year5),
+        Period::Year5 => None,
     }
 }
 
@@ -470,6 +625,15 @@ pub enum AppAction {
     BacktestScrollUp,
     BacktestScrollDown,
     ExitBacktest,
+    OpenSettings,
+    ExitSettings,
+    SettingsNavUp,
+    SettingsNavDown,
+    SettingsSelectProvider(DataSourceKind),
+    SettingsEditUrlChar(char),
+    SettingsEditUrlBackspace,
+    SettingsToggleUrlEdit,
+    SettingsSaved,
 }
 
 #[cfg(test)]
@@ -662,22 +826,25 @@ mod tests {
     #[test]
     fn test_delete_cleans_up_quotes() {
         let mut s = make_state();
-        s.quotes.insert("AAPL".into(), fa_core::Quote {
-            symbol: fa_core::Symbol::new("AAPL", fa_core::Market::USStock),
-            price: rust_decimal::Decimal::ZERO,
-            change: rust_decimal::Decimal::ZERO,
-            change_pct: rust_decimal::Decimal::ZERO,
-            open: None,
-            high: None,
-            low: None,
-            volume: None,
-            market_cap: None,
-            pe_ratio: None,
-            week_52_high: None,
-            week_52_low: None,
-            name: None,
-            timestamp: chrono::Utc::now(),
-        });
+        s.quotes.insert(
+            "AAPL".into(),
+            fa_core::Quote {
+                symbol: fa_core::Symbol::new("AAPL", fa_core::Market::USStock),
+                price: rust_decimal::Decimal::ZERO,
+                change: rust_decimal::Decimal::ZERO,
+                change_pct: rust_decimal::Decimal::ZERO,
+                open: None,
+                high: None,
+                low: None,
+                volume: None,
+                market_cap: None,
+                pe_ratio: None,
+                week_52_high: None,
+                week_52_low: None,
+                name: None,
+                timestamp: chrono::Utc::now(),
+            },
+        );
         s.selected_watchlist = 0;
         s.apply(AppAction::DeleteSelected);
         assert_eq!(s.watchlist.len(), 1);
@@ -708,12 +875,29 @@ mod tests {
         use chrono::Utc;
         use rust_decimal_macros::dec;
         let mut s = make_state();
-        s.screen = AppScreen::Chart(ChartState::new(Symbol::new("AAPL", Market::USStock), Period::Month1));
+        s.screen = AppScreen::Chart(ChartState::new(
+            Symbol::new("AAPL", Market::USStock),
+            Period::Month1,
+        ));
         let bars = vec![
-            OHLCV { symbol: Symbol::new("AAPL", Market::USStock), timestamp: Utc::now(),
-                    open: dec!(100), high: dec!(110), low: dec!(90), close: dec!(105), volume: 1000 },
-            OHLCV { symbol: Symbol::new("AAPL", Market::USStock), timestamp: Utc::now(),
-                    open: dec!(105), high: dec!(115), low: dec!(95), close: dec!(110), volume: 2000 },
+            OHLCV {
+                symbol: Symbol::new("AAPL", Market::USStock),
+                timestamp: Utc::now(),
+                open: dec!(100),
+                high: dec!(110),
+                low: dec!(90),
+                close: dec!(105),
+                volume: 1000,
+            },
+            OHLCV {
+                symbol: Symbol::new("AAPL", Market::USStock),
+                timestamp: Utc::now(),
+                open: dec!(105),
+                high: dec!(115),
+                low: dec!(95),
+                close: dec!(110),
+                volume: 2000,
+            },
         ];
         s.apply(AppAction::ChartDataLoaded(bars));
         if let AppScreen::Chart(ref cs) = s.screen {
@@ -730,8 +914,15 @@ mod tests {
         use chrono::Utc;
         use rust_decimal_macros::dec;
         let mut s = make_state();
-        let bar = OHLCV { symbol: Symbol::new("AAPL", Market::USStock), timestamp: Utc::now(),
-                          open: dec!(100), high: dec!(110), low: dec!(90), close: dec!(105), volume: 0 };
+        let bar = OHLCV {
+            symbol: Symbol::new("AAPL", Market::USStock),
+            timestamp: Utc::now(),
+            open: dec!(100),
+            high: dec!(110),
+            low: dec!(90),
+            close: dec!(105),
+            volume: 0,
+        };
         s.screen = AppScreen::Chart(ChartState {
             symbol: Symbol::new("AAPL", Market::USStock),
             period: Period::Month1,
@@ -743,22 +934,35 @@ mod tests {
             is_load_more: false,
         });
         s.apply(AppAction::ChartMoveCursor(-1));
-        if let AppScreen::Chart(ref cs) = s.screen { assert_eq!(cs.cursor, 0); }
+        if let AppScreen::Chart(ref cs) = s.screen {
+            assert_eq!(cs.cursor, 0);
+        }
         s.apply(AppAction::ChartMoveCursor(1));
         s.apply(AppAction::ChartMoveCursor(1));
-        if let AppScreen::Chart(ref cs) = s.screen { assert_eq!(cs.cursor, 1); }
+        if let AppScreen::Chart(ref cs) = s.screen {
+            assert_eq!(cs.cursor, 1);
+        }
     }
 
     #[test]
     fn test_chart_zoom_clamps() {
         let mut s = make_state();
-        s.screen = AppScreen::Chart(ChartState::new(Symbol::new("AAPL", Market::USStock), Period::Month1));
+        s.screen = AppScreen::Chart(ChartState::new(
+            Symbol::new("AAPL", Market::USStock),
+            Period::Month1,
+        ));
         s.apply(AppAction::ChartZoom(false));
         s.apply(AppAction::ChartZoom(false));
         s.apply(AppAction::ChartZoom(false));
-        if let AppScreen::Chart(ref cs) = s.screen { assert_eq!(cs.bar_width, 2); }
-        for _ in 0..10 { s.apply(AppAction::ChartZoom(true)); }
-        if let AppScreen::Chart(ref cs) = s.screen { assert_eq!(cs.bar_width, 8); }
+        if let AppScreen::Chart(ref cs) = s.screen {
+            assert_eq!(cs.bar_width, 2);
+        }
+        for _ in 0..10 {
+            s.apply(AppAction::ChartZoom(true));
+        }
+        if let AppScreen::Chart(ref cs) = s.screen {
+            assert_eq!(cs.bar_width, 8);
+        }
     }
 
     #[test]
@@ -766,8 +970,15 @@ mod tests {
         use chrono::Utc;
         use rust_decimal_macros::dec;
         let mut s = make_state();
-        let bar = OHLCV { symbol: Symbol::new("AAPL", Market::USStock), timestamp: Utc::now(),
-                          open: dec!(100), high: dec!(110), low: dec!(90), close: dec!(105), volume: 0 };
+        let bar = OHLCV {
+            symbol: Symbol::new("AAPL", Market::USStock),
+            timestamp: Utc::now(),
+            open: dec!(100),
+            high: dec!(110),
+            low: dec!(90),
+            close: dec!(105),
+            volume: 0,
+        };
         s.screen = AppScreen::Chart(ChartState {
             symbol: Symbol::new("AAPL", Market::USStock),
             period: Period::Month1,
@@ -799,7 +1010,10 @@ mod tests {
     fn test_exit_backtest_returns_to_main() {
         use fa_core::{Market, Symbol};
         let mut s = make_state();
-        s.apply(AppAction::StartBacktest(Symbol::new("AAPL", Market::USStock)));
+        s.apply(AppAction::StartBacktest(Symbol::new(
+            "AAPL",
+            Market::USStock,
+        )));
         s.apply(AppAction::ExitBacktest);
         assert!(matches!(s.screen, AppScreen::Main));
     }
@@ -808,24 +1022,36 @@ mod tests {
     fn test_backtest_next_prev_strategy_wraps() {
         use fa_core::{Market, Symbol};
         let mut s = make_state();
-        s.apply(AppAction::StartBacktest(Symbol::new("AAPL", Market::USStock)));
+        s.apply(AppAction::StartBacktest(Symbol::new(
+            "AAPL",
+            Market::USStock,
+        )));
         if let AppScreen::Backtest(ref bs) = s.screen {
             assert_eq!(bs.strategy_idx, 0);
         }
         s.apply(AppAction::BacktestNextStrategy);
-        if let AppScreen::Backtest(ref bs) = s.screen { assert_eq!(bs.strategy_idx, 1); }
+        if let AppScreen::Backtest(ref bs) = s.screen {
+            assert_eq!(bs.strategy_idx, 1);
+        }
         s.apply(AppAction::BacktestNextStrategy);
-        if let AppScreen::Backtest(ref bs) = s.screen { assert_eq!(bs.strategy_idx, 2); }
+        if let AppScreen::Backtest(ref bs) = s.screen {
+            assert_eq!(bs.strategy_idx, 2);
+        }
         s.apply(AppAction::BacktestNextStrategy);
-        if let AppScreen::Backtest(ref bs) = s.screen { assert_eq!(bs.strategy_idx, 0); }
+        if let AppScreen::Backtest(ref bs) = s.screen {
+            assert_eq!(bs.strategy_idx, 0);
+        }
     }
 
     #[test]
     fn test_run_backtest_sets_running_status() {
-        use fa_core::{Market, Symbol};
         use crate::app::BacktestStatus;
+        use fa_core::{Market, Symbol};
         let mut s = make_state();
-        s.apply(AppAction::StartBacktest(Symbol::new("AAPL", Market::USStock)));
+        s.apply(AppAction::StartBacktest(Symbol::new(
+            "AAPL",
+            Market::USStock,
+        )));
         s.apply(AppAction::RunBacktest);
         if let AppScreen::Backtest(ref bs) = s.screen {
             assert!(matches!(bs.status, BacktestStatus::Running));
@@ -881,45 +1107,54 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
         s.apply(AppAction::QuotesUpdated(vec![q_no_name]));
-        assert_eq!(s.watchlist[0].name, Some("贵州茅台".to_string()), "None update must not overwrite cached name");
+        assert_eq!(
+            s.watchlist[0].name,
+            Some("贵州茅台".to_string()),
+            "None update must not overwrite cached name"
+        );
     }
 
     fn make_dummy_ohlcv(symbol: Symbol, count: usize) -> Vec<fa_core::OHLCV> {
         use chrono::Utc;
         use rust_decimal_macros::dec;
-        (0..count).map(|i| fa_core::OHLCV {
-            symbol: symbol.clone(),
-            timestamp: Utc::now() - chrono::Duration::days((count - i) as i64),
-            open: dec!(100),
-            high: dec!(105),
-            low: dec!(95),
-            close: dec!(102),
-            volume: 1000,
-        }).collect()
+        (0..count)
+            .map(|i| fa_core::OHLCV {
+                symbol: symbol.clone(),
+                timestamp: Utc::now() - chrono::Duration::days((count - i) as i64),
+                open: dec!(100),
+                high: dec!(105),
+                low: dec!(95),
+                close: dec!(102),
+                volume: 1000,
+            })
+            .collect()
     }
 
     #[test]
     fn test_next_longer_period_full_chain() {
         use fa_core::Period;
-        assert_eq!(next_longer_period(&Period::Min1),   None);
-        assert_eq!(next_longer_period(&Period::Min5),   None);
-        assert_eq!(next_longer_period(&Period::Min15),  None);
-        assert_eq!(next_longer_period(&Period::Min30),  None);
-        assert_eq!(next_longer_period(&Period::Min60),  None);
-        assert_eq!(next_longer_period(&Period::Day1),   Some(Period::Week1));
-        assert_eq!(next_longer_period(&Period::Week1),  Some(Period::Month1));
+        assert_eq!(next_longer_period(&Period::Min1), None);
+        assert_eq!(next_longer_period(&Period::Min5), None);
+        assert_eq!(next_longer_period(&Period::Min15), None);
+        assert_eq!(next_longer_period(&Period::Min30), None);
+        assert_eq!(next_longer_period(&Period::Min60), None);
+        assert_eq!(next_longer_period(&Period::Day1), Some(Period::Week1));
+        assert_eq!(next_longer_period(&Period::Week1), Some(Period::Month1));
         assert_eq!(next_longer_period(&Period::Month1), Some(Period::Month3));
         assert_eq!(next_longer_period(&Period::Month3), Some(Period::Month6));
         assert_eq!(next_longer_period(&Period::Month6), Some(Period::Year1));
-        assert_eq!(next_longer_period(&Period::Year1),  Some(Period::Year5));
-        assert_eq!(next_longer_period(&Period::Year5),  None);
+        assert_eq!(next_longer_period(&Period::Year1), Some(Period::Year5));
+        assert_eq!(next_longer_period(&Period::Year5), None);
     }
 
     #[test]
     fn test_chart_load_more_history_upgrades_period_and_resets() {
         use fa_core::{Market, Period};
         let mut s = State::default();
-        s.screen = AppScreen::Chart(ChartState::new(Symbol::new("AAPL", Market::USStock), Period::Day1));
+        s.screen = AppScreen::Chart(ChartState::new(
+            Symbol::new("AAPL", Market::USStock),
+            Period::Day1,
+        ));
         if let AppScreen::Chart(ref mut cs) = s.screen {
             cs.cursor = 0;
             cs.loading = false;
@@ -939,7 +1174,10 @@ mod tests {
     fn test_chart_load_more_history_noop_at_max_period() {
         use fa_core::{Market, Period};
         let mut s = State::default();
-        s.screen = AppScreen::Chart(ChartState::new(Symbol::new("AAPL", Market::USStock), Period::Year5));
+        s.screen = AppScreen::Chart(ChartState::new(
+            Symbol::new("AAPL", Market::USStock),
+            Period::Year5,
+        ));
         if let AppScreen::Chart(ref mut cs) = s.screen {
             cs.loading = false;
         }
@@ -978,7 +1216,10 @@ mod tests {
         let dummy_ohlcv = make_dummy_ohlcv(sym.clone(), 30);
         s.apply(AppAction::ChartDataLoaded(dummy_ohlcv));
         if let AppScreen::Chart(ref cs) = s.screen {
-            assert_eq!(cs.cursor, 29, "normal load should place cursor at newest bar");
+            assert_eq!(
+                cs.cursor, 29,
+                "normal load should place cursor at newest bar"
+            );
         } else {
             panic!("Expected Chart screen");
         }
@@ -989,8 +1230,14 @@ mod tests {
         let mut s = State::default();
         s.is_add_active = true;
         s.search_results = vec![
-            fa_data::sina::StockSuggestion { code: "600519".into(), name: "贵州茅台".into() },
-            fa_data::sina::StockSuggestion { code: "000001".into(), name: "平安银行".into() },
+            fa_data::sina::StockSuggestion {
+                code: "600519".into(),
+                name: "贵州茅台".into(),
+            },
+            fa_data::sina::StockSuggestion {
+                code: "000001".into(),
+                name: "平安银行".into(),
+            },
         ];
         s.search_selected = 1;
         s.apply(AppAction::SearchSelectNext);
@@ -1002,8 +1249,14 @@ mod tests {
         let mut s = State::default();
         s.is_add_active = true;
         s.search_results = vec![
-            fa_data::sina::StockSuggestion { code: "600519".into(), name: "A".into() },
-            fa_data::sina::StockSuggestion { code: "000001".into(), name: "B".into() },
+            fa_data::sina::StockSuggestion {
+                code: "600519".into(),
+                name: "A".into(),
+            },
+            fa_data::sina::StockSuggestion {
+                code: "000001".into(),
+                name: "B".into(),
+            },
         ];
         s.search_selected = 0;
         s.apply(AppAction::SearchSelectPrev);
@@ -1014,7 +1267,10 @@ mod tests {
     fn test_confirm_search_selection_adds_to_watchlist() {
         let mut s = State::default();
         s.is_add_active = true;
-        s.search_results = vec![fa_data::sina::StockSuggestion { code: "600519".into(), name: "贵州茅台".into() }];
+        s.search_results = vec![fa_data::sina::StockSuggestion {
+            code: "600519".into(),
+            name: "贵州茅台".into(),
+        }];
         s.search_selected = 0;
         s.apply(AppAction::ConfirmSearchSelection);
         assert!(!s.is_add_active);
@@ -1038,13 +1294,147 @@ mod tests {
         let mut s = State::default();
         s.is_add_active = true;
         s.search_generation = 5;
-        s.apply(AppAction::SearchResultsUpdated(3, vec![
-            fa_data::sina::StockSuggestion { code: "STALE".into(), name: "Stale".into() }
-        ]));
+        s.apply(AppAction::SearchResultsUpdated(
+            3,
+            vec![fa_data::sina::StockSuggestion {
+                code: "STALE".into(),
+                name: "Stale".into(),
+            }],
+        ));
         assert!(s.search_results.is_empty());
-        s.apply(AppAction::SearchResultsUpdated(5, vec![
-            fa_data::sina::StockSuggestion { code: "600519".into(), name: "茅台".into() }
-        ]));
+        s.apply(AppAction::SearchResultsUpdated(
+            5,
+            vec![fa_data::sina::StockSuggestion {
+                code: "600519".into(),
+                name: "茅台".into(),
+            }],
+        ));
         assert_eq!(s.search_results.len(), 1);
+    }
+
+    #[test]
+    fn test_settings_state_toggle_provider() {
+        let mut state = State::default();
+        state.apply(AppAction::OpenSettings);
+        assert!(matches!(state.screen, AppScreen::Settings(_)));
+        state.apply(AppAction::SettingsSelectProvider(DataSourceKind::AkShare));
+        if let AppScreen::Settings(ref ss) = state.screen {
+            assert_eq!(ss.provider, DataSourceKind::AkShare);
+        } else {
+            panic!("expected Settings screen");
+        }
+    }
+
+    #[test]
+    fn test_settings_save_applies_and_closes() {
+        let mut state = State::default();
+        state.apply(AppAction::OpenSettings);
+        state.apply(AppAction::SettingsSelectProvider(DataSourceKind::AkShare));
+        state.apply(AppAction::SettingsSaved);
+        assert!(matches!(state.screen, AppScreen::Main));
+        assert_eq!(state.data_source, DataSourceKind::AkShare);
+    }
+
+    #[test]
+    fn test_settings_save_ignored_outside_settings_screen() {
+        let mut state = State::default();
+        state.screen = AppScreen::Chart(ChartState::new(
+            Symbol::new("AAPL", Market::USStock),
+            Period::Month1,
+        ));
+        state.apply(AppAction::SettingsSaved);
+        assert!(matches!(state.screen, AppScreen::Chart(_)));
+        assert_eq!(state.data_source, DataSourceKind::Sina);
+    }
+
+    #[test]
+    fn test_settings_exit_ignored_outside_settings_screen() {
+        let mut state = State::default();
+        state.screen = AppScreen::Chart(ChartState::new(
+            Symbol::new("AAPL", Market::USStock),
+            Period::Month1,
+        ));
+        state.apply(AppAction::ExitSettings);
+        assert!(matches!(state.screen, AppScreen::Chart(_)));
+    }
+
+    #[test]
+    fn test_settings_cancel_closes_screen() {
+        let mut state = State::default();
+        state.apply(AppAction::OpenSettings);
+        state.apply(AppAction::SettingsSelectProvider(DataSourceKind::AkShare));
+        state.apply(AppAction::ExitSettings);
+        assert!(matches!(state.screen, AppScreen::Main));
+        assert_eq!(state.data_source, DataSourceKind::Sina);
+        assert_eq!(state.akshare_url, "http://127.0.0.1:8080");
+    }
+
+    #[test]
+    fn test_settings_nav() {
+        let mut state = State::default();
+        state.apply(AppAction::OpenSettings);
+        if let AppScreen::Settings(ref ss) = state.screen {
+            assert_eq!(ss.focused_field, 0);
+        } else {
+            panic!("expected Settings screen");
+        }
+        state.apply(AppAction::SettingsNavDown);
+        if let AppScreen::Settings(ref ss) = state.screen {
+            assert_eq!(ss.focused_field, 1);
+        } else {
+            panic!("expected Settings screen");
+        }
+        state.apply(AppAction::SettingsNavUp);
+        if let AppScreen::Settings(ref ss) = state.screen {
+            assert_eq!(ss.focused_field, 0);
+            assert!(!ss.editing_url);
+        } else {
+            panic!("expected Settings screen");
+        }
+    }
+
+    #[test]
+    fn test_settings_toggle_url_edit_noop_on_provider_field() {
+        let mut state = State::default();
+        state.apply(AppAction::OpenSettings);
+        state.apply(AppAction::SettingsToggleUrlEdit);
+        if let AppScreen::Settings(ref ss) = state.screen {
+            assert!(!ss.editing_url);
+        } else {
+            panic!("expected Settings screen");
+        }
+    }
+
+    #[test]
+    fn test_settings_url_editing() {
+        let mut state = State::default();
+        state.apply(AppAction::OpenSettings);
+        state.apply(AppAction::SettingsNavDown);
+        state.apply(AppAction::SettingsToggleUrlEdit);
+        state.apply(AppAction::SettingsEditUrlBackspace);
+        state.apply(AppAction::SettingsEditUrlChar('X'));
+        if let AppScreen::Settings(ref ss) = state.screen {
+            assert!(ss.editing_url);
+            assert!(ss.akshare_url.ends_with('X'));
+        } else {
+            panic!("expected Settings screen");
+        }
+    }
+
+    #[test]
+    fn test_settings_nav_stops_url_editing_when_leaving_url_field() {
+        let mut state = State::default();
+        state.apply(AppAction::OpenSettings);
+        state.apply(AppAction::SettingsNavDown);
+        state.apply(AppAction::SettingsToggleUrlEdit);
+        state.apply(AppAction::SettingsNavUp);
+        state.apply(AppAction::SettingsEditUrlChar('X'));
+        if let AppScreen::Settings(ref ss) = state.screen {
+            assert_eq!(ss.focused_field, 0);
+            assert!(!ss.editing_url);
+            assert_eq!(ss.akshare_url, "http://127.0.0.1:8080");
+        } else {
+            panic!("expected Settings screen");
+        }
     }
 }
