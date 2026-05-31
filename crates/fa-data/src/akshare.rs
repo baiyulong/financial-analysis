@@ -1,11 +1,13 @@
+// crates/fa-data/src/akshare.rs
 use async_trait::async_trait;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{FixedOffset, NaiveDateTime, TimeZone, Utc};
 use fa_core::{DataError, DataProvider, Market, Period, Quote, Symbol, OHLCV};
 use rust_decimal::prelude::*;
 use serde_json::Value;
 
 pub const DEFAULT_AKTOOLS_URL: &str = "http://127.0.0.1:8080";
 
+#[derive(Debug, Clone)]
 pub struct AkShareProvider {
     client: reqwest::Client,
     base_url: String,
@@ -44,13 +46,22 @@ impl AkShareProvider {
     }
 }
 
+impl Default for AkShareProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub fn parse_minute_json(json: &[Value], symbol: &Symbol) -> Vec<OHLCV> {
+    let cst = FixedOffset::east_opt(8 * 3600).unwrap();
+
     json.iter()
         .filter_map(|row| {
             let day_str = row["day"].as_str()?;
             let ts = NaiveDateTime::parse_from_str(day_str, "%Y-%m-%d %H:%M:%S")
                 .ok()
-                .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))?;
+                .and_then(|dt| cst.from_local_datetime(&dt).single())
+                .map(|t| t.with_timezone(&Utc))?;
             let open = Decimal::from_f64(row["open"].as_f64()?)?;
             let high = Decimal::from_f64(row["high"].as_f64()?)?;
             let low = Decimal::from_f64(row["low"].as_f64()?)?;
@@ -70,13 +81,16 @@ pub fn parse_minute_json(json: &[Value], symbol: &Symbol) -> Vec<OHLCV> {
 }
 
 pub fn parse_hist_json(json: &[Value], symbol: &Symbol) -> Vec<OHLCV> {
+    let cst = FixedOffset::east_opt(8 * 3600).unwrap();
+
     json.iter()
         .filter_map(|row| {
             let date_str = row["日期"].as_str()?;
             let ts = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
                 .ok()
-                .map(|d| d.and_hms_opt(0, 0, 0).unwrap())
-                .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))?;
+                .and_then(|d| d.and_hms_opt(0, 0, 0))
+                .and_then(|dt| cst.from_local_datetime(&dt).single())
+                .map(|t| t.with_timezone(&Utc))?;
             let open = Decimal::from_f64(row["开盘"].as_f64()?)?;
             let high = Decimal::from_f64(row["最高"].as_f64()?)?;
             let low = Decimal::from_f64(row["最低"].as_f64()?)?;
@@ -167,6 +181,7 @@ impl DataProvider for AkShareProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{TimeZone, Utc};
     use fa_core::{Market, Symbol};
     use mockito::Server;
     use rust_decimal::Decimal;
@@ -227,7 +242,9 @@ mod tests {
         let bars = parse_minute_json(&data, &sym());
         assert_eq!(bars.len(), 2);
         assert_eq!(bars[0].volume, 12345);
+        assert_eq!(bars[0].timestamp, Utc.with_ymd_and_hms(2026, 5, 30, 1, 31, 0).unwrap());
         assert_eq!(bars[1].open, Decimal::from(1805));
+        assert_eq!(bars[1].timestamp, Utc.with_ymd_and_hms(2026, 5, 30, 1, 32, 0).unwrap());
     }
 
     #[test]
@@ -247,6 +264,7 @@ mod tests {
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0].volume, 50000);
         assert_eq!(bars[0].high, Decimal::from(1820));
+        assert_eq!(bars[0].timestamp, Utc.with_ymd_and_hms(2026, 5, 29, 16, 0, 0).unwrap());
     }
 
     #[test]
@@ -302,5 +320,77 @@ mod tests {
 
         assert!(matches!(err, DataError::Network(msg) if msg.contains("500")));
         mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_ohlcv_minute_success() {
+        let mut server = mockito::Server::new_async().await;
+        let body = serde_json::json!([
+            {"day": "2026-05-30 09:31:00", "open": 1800.0, "high": 1810.0,
+             "low": 1795.0, "close": 1805.0, "volume": 12345}
+        ]);
+        let mock = server
+            .mock("GET", "/api/public/stock_zh_a_minute")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("symbol".into(), "sh600519".into()),
+                mockito::Matcher::UrlEncoded("period".into(), "1".into()),
+                mockito::Matcher::UrlEncoded("adjust".into(), "qfq".into()),
+            ]))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body.to_string())
+            .create_async().await;
+
+        let provider = AkShareProvider::with_base_url(server.url());
+        let symbol = Symbol::new("600519", Market::AShare);
+        let bars = provider.fetch_ohlcv(&symbol, Period::Min1).await.unwrap();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].volume, 12345);
+        assert_eq!(bars[0].timestamp, Utc.with_ymd_and_hms(2026, 5, 30, 1, 31, 0).unwrap());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_ohlcv_hist_success() {
+        let mut server = mockito::Server::new_async().await;
+        let body = serde_json::json!([
+            {"日期": "2026-05-30", "开盘": 1800.0, "最高": 1820.0,
+             "最低": 1790.0, "收盘": 1810.0, "成交量": 50000}
+        ]);
+        let mock = server
+            .mock("GET", "/api/public/stock_zh_a_hist")
+            .match_query(mockito::Matcher::AllOf(vec![
+                mockito::Matcher::UrlEncoded("symbol".into(), "600519".into()),
+                mockito::Matcher::UrlEncoded("period".into(), "daily".into()),
+                mockito::Matcher::UrlEncoded("start_date".into(), "19900101".into()),
+                mockito::Matcher::UrlEncoded("end_date".into(), "29991231".into()),
+                mockito::Matcher::UrlEncoded("adjust".into(), "qfq".into()),
+            ]))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body.to_string())
+            .create_async().await;
+
+        let provider = AkShareProvider::with_base_url(server.url());
+        let symbol = Symbol::new("sh600519", Market::AShare);
+        let bars = provider.fetch_ohlcv(&symbol, Period::Day1).await.unwrap();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].volume, 50000);
+        assert_eq!(bars[0].timestamp, Utc.with_ymd_and_hms(2026, 5, 29, 16, 0, 0).unwrap());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_quote_returns_err() {
+        let provider = AkShareProvider::new();
+        let symbol = Symbol::new("600519", Market::AShare);
+        assert!(provider.fetch_quote(&symbol).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_ohlcv_non_ashare_returns_err() {
+        let provider = AkShareProvider::new();
+        let symbol = Symbol::new("AAPL", Market::USStock);
+        assert!(provider.fetch_ohlcv(&symbol, Period::Day1).await.is_err());
     }
 }
