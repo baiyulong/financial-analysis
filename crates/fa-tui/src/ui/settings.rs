@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_draw_settings_shows_title_help_and_selected_provider() {
-        let ss = SettingsState::new(DataSourceKind::AkShare, "http://127.0.0.1:8080".into());
+        let ss = SettingsState::new(DataSourceKind::AkShare, "http://127.0.0.1:8080".into(), crate::i18n::Language::default());
         let buf = render_buffer(&ss);
         let content = buffer_text(&buf);
 
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn test_draw_settings_greys_out_url_for_sina() {
-        let ss = SettingsState::new(DataSourceKind::Sina, "http://127.0.0.1:8080".into());
+        let ss = SettingsState::new(DataSourceKind::Sina, "http://127.0.0.1:8080".into(), crate::i18n::Language::default());
         let buf = render_buffer(&ss);
         let content = buffer_text(&buf);
 
@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_draw_settings_shows_cursor_while_editing_url() {
-        let mut ss = SettingsState::new(DataSourceKind::AkShare, "http://127.0.0.1:8080".into());
+        let mut ss = SettingsState::new(DataSourceKind::AkShare, "http://127.0.0.1:8080".into(), crate::i18n::Language::default());
         ss.focused_field = 1;
         ss.editing_url = true;
 

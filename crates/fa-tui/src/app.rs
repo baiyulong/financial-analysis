@@ -28,24 +28,26 @@ pub struct SettingsState {
     pub provider: DataSourceKind,
     /// AKTools server URL, e.g. "http://127.0.0.1:8080"
     pub akshare_url: String,
-    /// Which field the cursor is on: 0 = provider, 1 = URL
+    pub language: crate::i18n::Language,
+    /// Which field the cursor is on: 0 = provider, 1 = URL, 2 = language
     pub focused_field: usize,
     /// Whether the URL text field is being edited
     pub editing_url: bool,
 }
 
 impl SettingsState {
-    pub fn new(provider: DataSourceKind, akshare_url: String) -> Self {
+    pub fn new(provider: DataSourceKind, akshare_url: String, language: crate::i18n::Language) -> Self {
         Self {
             provider,
             akshare_url,
+            language,
             focused_field: 0,
             editing_url: false,
         }
     }
 
     pub fn field_count() -> usize {
-        2
+        3
     }
 
     pub fn move_up(&mut self) {
@@ -197,6 +199,9 @@ pub struct State {
     pub screen: AppScreen,
     pub data_source: DataSourceKind,
     pub akshare_url: String,
+    pub language: crate::i18n::Language,
+    pub confirm_quit: bool,
+    pub confirm_quit_focused: bool,
 }
 
 impl Default for State {
@@ -221,6 +226,9 @@ impl Default for State {
             screen: AppScreen::Main,
             data_source: DataSourceKind::Sina,
             akshare_url: "http://127.0.0.1:8080".to_string(),
+            language: crate::i18n::Language::default(),
+            confirm_quit: false,
+            confirm_quit_focused: false,
         }
     }
 }
@@ -252,6 +260,7 @@ impl State {
         match action {
             AppAction::Quit => {
                 self.should_quit = true;
+                self.confirm_quit = false;
             }
             AppAction::NextPanel => {
                 self.focused_panel = self.focused_panel.next();
@@ -506,7 +515,7 @@ impl State {
                 self.screen = AppScreen::Main;
             }
             AppAction::OpenSettings => {
-                let ss = SettingsState::new(self.data_source.clone(), self.akshare_url.clone());
+                let ss = SettingsState::new(self.data_source.clone(), self.akshare_url.clone(), self.language);
                 self.screen = AppScreen::Settings(ss);
             }
             AppAction::ExitSettings => {
@@ -554,7 +563,24 @@ impl State {
                 if let AppScreen::Settings(ref ss) = self.screen {
                     self.data_source = ss.provider.clone();
                     self.akshare_url = ss.akshare_url.clone();
+                    self.language = ss.language;
                     self.screen = AppScreen::Main;
+                }
+            }
+            AppAction::RequestQuit => {
+                self.confirm_quit = true;
+                self.confirm_quit_focused = false;
+            }
+            AppAction::CancelQuit => {
+                self.confirm_quit = false;
+                self.confirm_quit_focused = false;
+            }
+            AppAction::ToggleQuitButton => {
+                self.confirm_quit_focused = !self.confirm_quit_focused;
+            }
+            AppAction::SettingsSelectLanguage(lang) => {
+                if let AppScreen::Settings(ref mut ss) = self.screen {
+                    ss.language = lang;
                 }
             }
         }
@@ -573,6 +599,13 @@ impl State {
     /// Chart entry is always from the watchlist; portfolio symbols are not chartable via Enter.
     pub fn selected_symbol(&self) -> Option<&Symbol> {
         self.watchlist.get(self.selected_watchlist)
+    }
+
+    pub fn strings(&self) -> &'static crate::i18n::Strings {
+        match self.language {
+            crate::i18n::Language::Zh => &crate::i18n::ZH,
+            crate::i18n::Language::En => &crate::i18n::EN,
+        }
     }
 }
 
@@ -640,6 +673,10 @@ pub enum AppAction {
     SettingsEditUrlBackspace,
     SettingsToggleUrlEdit,
     SettingsSaved,
+    RequestQuit,
+    CancelQuit,
+    ToggleQuitButton,
+    SettingsSelectLanguage(crate::i18n::Language),
 }
 
 #[cfg(test)]
@@ -1517,5 +1554,54 @@ mod tests {
         } else {
             panic!("expected Settings screen");
         }
+    }
+
+    #[test]
+    fn test_request_quit_sets_confirm_flag() {
+        let mut s = State::default();
+        assert!(!s.confirm_quit);
+        s.apply(AppAction::RequestQuit);
+        assert!(s.confirm_quit);
+        assert!(!s.should_quit);
+    }
+
+    #[test]
+    fn test_cancel_quit_clears_flag() {
+        let mut s = State::default();
+        s.confirm_quit = true;
+        s.apply(AppAction::CancelQuit);
+        assert!(!s.confirm_quit);
+    }
+
+    #[test]
+    fn test_toggle_quit_button_flips_focus() {
+        let mut s = State::default();
+        assert!(!s.confirm_quit_focused);
+        s.apply(AppAction::ToggleQuitButton);
+        assert!(s.confirm_quit_focused);
+        s.apply(AppAction::ToggleQuitButton);
+        assert!(!s.confirm_quit_focused);
+    }
+
+    #[test]
+    fn test_state_strings_returns_zh_by_default() {
+        let s = State::default();
+        assert_eq!(s.strings().watchlist_title, crate::i18n::ZH.watchlist_title);
+    }
+
+    #[test]
+    fn test_state_strings_returns_en_when_set() {
+        let mut s = State::default();
+        s.language = crate::i18n::Language::En;
+        assert_eq!(s.strings().watchlist_title, crate::i18n::EN.watchlist_title);
+    }
+
+    #[test]
+    fn test_settings_save_applies_language() {
+        let mut s = State::default();
+        s.apply(AppAction::OpenSettings);
+        s.apply(AppAction::SettingsSelectLanguage(crate::i18n::Language::En));
+        s.apply(AppAction::SettingsSaved);
+        assert_eq!(s.language, crate::i18n::Language::En);
     }
 }

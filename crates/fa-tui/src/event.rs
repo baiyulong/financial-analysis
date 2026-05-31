@@ -543,6 +543,7 @@ mod tests {
         state.screen = AppScreen::Settings(SettingsState::new(
             DataSourceKind::Sina,
             "http://127.0.0.1:8080".into(),
+            crate::i18n::Language::default(),
         ));
 
         assert!(matches!(
@@ -569,6 +570,7 @@ mod tests {
         state.screen = AppScreen::Settings(SettingsState::new(
             DataSourceKind::Sina,
             "http://127.0.0.1:8080".into(),
+            crate::i18n::Language::default(),
         ));
 
         assert!(matches!(
@@ -597,7 +599,7 @@ mod tests {
     #[test]
     fn test_resolve_action_routes_url_edit_keys_on_settings_screen() {
         let mut state = State::default();
-        let mut ss = SettingsState::new(DataSourceKind::Sina, "http://127.0.0.1:8080".into());
+        let mut ss = SettingsState::new(DataSourceKind::Sina, "http://127.0.0.1:8080".into(), crate::i18n::Language::default());
         ss.focused_field = 1;
         ss.editing_url = true;
         state.screen = AppScreen::Settings(ss);
@@ -618,6 +620,7 @@ mod tests {
         state.screen = AppScreen::Settings(SettingsState::new(
             DataSourceKind::Sina,
             "http://127.0.0.1:8080".into(),
+            crate::i18n::Language::default(),
         ));
 
         assert!(
@@ -628,7 +631,7 @@ mod tests {
     #[test]
     fn test_resolve_action_ignores_ctrl_chars_when_editing_settings_url() {
         let mut state = State::default();
-        let mut ss = SettingsState::new(DataSourceKind::Sina, "http://127.0.0.1:8080".into());
+        let mut ss = SettingsState::new(DataSourceKind::Sina, "http://127.0.0.1:8080".into(), crate::i18n::Language::default());
         ss.focused_field = 1;
         ss.editing_url = true;
         state.screen = AppScreen::Settings(ss);
