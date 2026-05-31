@@ -13,6 +13,7 @@ async-trait = "0.1"
 
 # HTTP
 reqwest = { version = "0.12", features = ["json"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -51,3 +52,4 @@ rust_decimal = { workspace = true }
 crossterm    = { workspace = true }
 ratatui      = { workspace = true }
 dirs         = "5"
+rusqlite     = { workspace = true }

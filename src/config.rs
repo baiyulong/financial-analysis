@@ -59,6 +59,12 @@ pub struct Config {
 }
 
 impl Config {
+    /// Load the embedded default configuration (config/default.toml bundled at compile time).
+    pub fn load_defaults() -> Self {
+        let default_toml = include_str!("../config/default.toml");
+        toml::from_str(default_toml).unwrap_or_default()
+    }
+
     pub fn config_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
         let home = dirs::home_dir().ok_or("cannot find home dir")?;
         Ok(home.join(".config").join("fa").join("config.toml"))

@@ -1,4 +1,5 @@
 mod config;
+mod storage;
 
 use anyhow::Result;
 use crossterm::{
@@ -20,9 +21,10 @@ use fa_tui::{
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{
     io,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
     time::Duration,
 };
+use storage::Storage;
 use tokio::sync::mpsc;
 
 fn build_router(kind: DataSourceKind, akshare_url: &str) -> ProviderRouter {
@@ -40,24 +42,21 @@ fn build_router(kind: DataSourceKind, akshare_url: &str) -> ProviderRouter {
     }
 }
 
-fn build_initial_state(cfg: &config::Config) -> State {
-    let mut state = State {
-        watchlist: cfg.to_watchlist_symbols(),
-        portfolio: cfg.to_portfolio(),
-        ..Default::default()
+fn build_initial_state(db: &Storage) -> State {
+    let (provider_opt, url_opt) = db.load_data_source();
+    let data_source = match provider_opt.as_deref() {
+        Some("akshare") => DataSourceKind::AkShare,
+        _ => DataSourceKind::Sina,
     };
+    let akshare_url = url_opt.unwrap_or_else(|| "http://127.0.0.1:8080".to_string());
 
-    if let Some(ref provider_str) = cfg.data_source.provider {
-        state.data_source = match provider_str.as_str() {
-            "akshare" => DataSourceKind::AkShare,
-            _ => DataSourceKind::Sina,
-        };
+    State {
+        watchlist: db.load_watchlist(),
+        portfolio: db.load_portfolio(),
+        data_source,
+        akshare_url,
+        ..Default::default()
     }
-    if let Some(ref url) = cfg.data_source.akshare_url {
-        state.akshare_url = url.clone();
-    }
-
-    state
 }
 
 fn router_config_after_action(
@@ -78,9 +77,15 @@ fn router_config_after_action(
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cfg = config::Config::load()?;
+    // Open SQLite database (creates fa.db in current working directory)
+    let db = Storage::open("fa.db")?;
 
-    let initial_state = build_initial_state(&cfg);
+    // On first run, seed watchlist/portfolio from config/default.toml
+    let default_cfg = config::Config::load_defaults();
+    db.seed_if_empty(&default_cfg)?;
+
+    let initial_state = build_initial_state(&db);
+    let storage: Arc<Mutex<Storage>> = Arc::new(Mutex::new(db));
     let router = Arc::new(RwLock::new(Arc::new(build_router(
         initial_state.data_source.clone(),
         &initial_state.akshare_url,
@@ -89,7 +94,7 @@ async fn main() -> Result<()> {
 
     let (tx, mut rx) = mpsc::channel::<AppAction>(64);
 
-    // Spawn EventHandler — now receives AppState for screen-aware key mapping
+    // Spawn EventHandler — receives AppState for screen-aware key mapping
     let event_tx = tx.clone();
     let event_state = Arc::clone(&app_state);
     tokio::spawn(async move {
@@ -99,7 +104,7 @@ async fn main() -> Result<()> {
     // Spawn DataFetcher (periodic quote refresh)
     let fetcher_state = Arc::clone(&app_state);
     let fetcher_tx = tx.clone();
-    let refresh_secs = cfg.general.refresh_interval;
+    let refresh_secs = 30u64; // default refresh interval
     let router_clone = Arc::clone(&router);
     tokio::spawn(async move {
         loop {
@@ -156,6 +161,7 @@ async fn main() -> Result<()> {
         refresh_secs,
         &router,
         &tx,
+        &storage,
     )
     .await;
 
@@ -178,6 +184,7 @@ async fn run_app(
     refresh_secs: u64,
     router: &Arc<RwLock<Arc<ProviderRouter>>>,
     tx: &mpsc::Sender<AppAction>,
+    storage: &Arc<Mutex<Storage>>,
 ) -> Result<()> {
     let tick = Duration::from_millis(16);
 
@@ -205,9 +212,18 @@ async fn run_app(
                         &action,
                         AppAction::UpdateAddInput(_) | AppAction::BackspaceAdd
                     );
+                    let is_confirm_add = matches!(&action, AppAction::ConfirmAdd);
+                    let is_delete = matches!(&action, AppAction::DeleteSelected);
 
-                    let (symbol_period, backtest_params, search_query, router_config, should_quit) = {
+                    let (symbol_period, backtest_params, search_query, router_config, should_quit, added_symbol, removed_symbol) = {
                         let mut state = app_state.write().await;
+                        let prev_len = state.watchlist.len();
+                        // Capture the symbol about to be deleted BEFORE apply() removes it
+                        let symbol_to_delete = if is_delete {
+                            state.watchlist.get(state.selected_watchlist).cloned()
+                        } else {
+                            None
+                        };
                         let is_already_running = if needs_backtest_run {
                             if let AppScreen::Backtest(bs) = &state.screen {
                                 matches!(bs.status, BacktestStatus::Running)
@@ -241,8 +257,33 @@ async fn run_app(
                         } else {
                             None
                         };
-                        (sp, bp, sq, router_config, state.should_quit)
+                        // Detect newly added symbol
+                        let added = if is_confirm_add && state.watchlist.len() > prev_len {
+                            state.watchlist.last().cloned()
+                        } else {
+                            None
+                        };
+                        // Symbol was removed if watchlist shrank
+                        let removed = if is_delete && state.watchlist.len() < prev_len {
+                            symbol_to_delete
+                        } else {
+                            None
+                        };
+                        (sp, bp, sq, router_config, state.should_quit, added, removed)
                     }; // write lock released here
+
+                    // Persist newly added stock
+                    if let Some(ref sym) = added_symbol {
+                        if let Ok(db) = storage.lock() {
+                            let _ = db.add_to_watchlist(sym);
+                        }
+                    }
+                    // Persist deleted stock
+                    if let Some(ref sym) = removed_symbol {
+                        if let Ok(db) = storage.lock() {
+                            let _ = db.remove_from_watchlist(sym);
+                        }
+                    }
 
                     if let Some((kind, akshare_url)) = router_config {
                         let provider_str = match &kind {
@@ -253,15 +294,15 @@ async fn run_app(
                             let mut guard = router.write().unwrap();
                             *guard = Arc::new(build_router(kind, &akshare_url));
                         }
-                        if let Err(err) =
-                            config::Config::save_data_source(provider_str, &akshare_url)
-                        {
-                            let _ = tx
-                                .send(AppAction::StatusMessage(format!(
-                                    "[!] 保存数据源配置失败: {}",
-                                    err
-                                )))
-                                .await;
+                        if let Ok(db) = storage.lock() {
+                            if let Err(err) = db.save_data_source(provider_str, &akshare_url) {
+                                let _ = tx
+                                    .send(AppAction::StatusMessage(format!(
+                                        "[!] 保存数据源配置失败: {}",
+                                        err
+                                    )))
+                                    .await;
+                            }
                         }
                     }
 
@@ -355,19 +396,17 @@ mod tests {
 
     #[test]
     fn build_initial_state_applies_persisted_data_source_config() {
-        let cfg: crate::config::Config = toml::from_str(
-            r#"
-[data_source]
-provider = "akshare"
-akshare_url = "http://127.0.0.1:9000"
-"#,
-        )
-        .unwrap();
+        let db = crate::storage::Storage::open(":memory:").unwrap();
+        db.save_data_source("akshare", "http://127.0.0.1:9000").unwrap();
+        let sym = fa_core::Symbol::new("600519", Market::AShare);
+        db.add_to_watchlist(&sym).unwrap();
 
-        let state = build_initial_state(&cfg);
+        let state = build_initial_state(&db);
 
         assert_eq!(state.data_source, DataSourceKind::AkShare);
         assert_eq!(state.akshare_url, "http://127.0.0.1:9000");
+        assert_eq!(state.watchlist.len(), 1);
+        assert_eq!(state.watchlist[0].code, "600519");
     }
 
     #[test]
