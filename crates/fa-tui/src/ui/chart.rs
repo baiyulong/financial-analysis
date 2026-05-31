@@ -18,8 +18,8 @@ struct KlineChart<'a> {
     cursor_in_view: usize,
     /// Pre-sliced to visible range: ma_data[k].1[i] corresponds to visible[i]
     ma_data: Vec<(Color, Vec<Option<rust_decimal::Decimal>>)>,
-    /// Most recent close price for the horizontal reference line (all data, not just visible).
-    last_close: Option<f64>,
+    /// Close price of the cursor bar for the horizontal reference line.
+    cursor_close: Option<f64>,
 }
 
 impl Widget for KlineChart<'_> {
@@ -34,7 +34,7 @@ impl Widget for KlineChart<'_> {
 
         // ── Pass 0: Last close price horizontal reference line ────────────
         // Drawn first so candlesticks appear on top in their cells.
-        if let Some(close) = self.last_close {
+        if let Some(close) = self.cursor_close {
             let row = price_to_row(close, self.y_min, self.y_max, h);
             for x in 0..w {
                 buf[(area.x + x, area.y + row)]
@@ -466,7 +466,7 @@ fn render_chart_inner(f: &mut Frame, cs: &ChartState, strings: &'static crate::i
             bar_w: cs.bar_width,
             cursor_in_view,
             ma_data,
-            last_close: cs.data.last().and_then(|b| b.close.to_f64()),
+            cursor_close: cs.current_bar().and_then(|b| b.close.to_f64()),
         },
         area,
     );
