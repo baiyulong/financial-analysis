@@ -60,8 +60,8 @@ impl EventHandler {
     /// Note: only intended for non-chart, non-add contexts; see `resolve_action` for routing.
     pub fn map_key_main(code: KeyCode, modifiers: KeyModifiers) -> Option<AppAction> {
         match (code, modifiers) {
-            (KeyCode::Char('q'), KeyModifiers::NONE)
-            | (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(AppAction::Quit),
+            (KeyCode::Char('q'), KeyModifiers::NONE) => Some(AppAction::RequestQuit),
+            (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(AppAction::Quit),
 
             (KeyCode::Tab, _) => Some(AppAction::NextPanel),
             (KeyCode::Up, _) => Some(AppAction::MoveUp),
@@ -207,6 +207,18 @@ impl EventHandler {
             return Some(AppAction::Quit);
         }
 
+        // Quit confirmation dialog intercepts all keys when visible.
+        if state.confirm_quit {
+            return match (code, modifiers) {
+                (KeyCode::Char('y'), _) | (KeyCode::Enter, _) => Some(AppAction::Quit),
+                (KeyCode::Char('n'), _) | (KeyCode::Char('q'), _) | (KeyCode::Esc, _) => {
+                    Some(AppAction::CancelQuit)
+                }
+                (KeyCode::Left, _) | (KeyCode::Right, _) => Some(AppAction::ToggleQuitButton),
+                _ => None,
+            };
+        }
+
         if let AppScreen::Chart(ref cs) = state.screen {
             // Special case: left arrow at cursor==0 loads more history (only when not loading)
             if code == KeyCode::Left && cs.cursor == 0 && !cs.loading {
@@ -273,12 +285,63 @@ mod tests {
     fn test_map_quit() {
         assert!(matches!(
             EventHandler::map_key_main(KeyCode::Char('q'), KeyModifiers::NONE),
-            Some(AppAction::Quit)
+            Some(AppAction::RequestQuit)
         ));
         assert!(matches!(
             EventHandler::map_key_main(KeyCode::Char('c'), KeyModifiers::CONTROL),
             Some(AppAction::Quit)
         ));
+    }
+
+    #[test]
+    fn test_quit_confirm_y_dispatches_quit() {
+        let mut state = State::default();
+        state.confirm_quit = true;
+        let action =
+            EventHandler::resolve_action(&state, KeyCode::Char('y'), KeyModifiers::NONE);
+        assert!(matches!(action, Some(AppAction::Quit)));
+    }
+
+    #[test]
+    fn test_quit_confirm_enter_dispatches_quit() {
+        let mut state = State::default();
+        state.confirm_quit = true;
+        let action = EventHandler::resolve_action(&state, KeyCode::Enter, KeyModifiers::NONE);
+        assert!(matches!(action, Some(AppAction::Quit)));
+    }
+
+    #[test]
+    fn test_quit_confirm_esc_cancels() {
+        let mut state = State::default();
+        state.confirm_quit = true;
+        let action = EventHandler::resolve_action(&state, KeyCode::Esc, KeyModifiers::NONE);
+        assert!(matches!(action, Some(AppAction::CancelQuit)));
+    }
+
+    #[test]
+    fn test_quit_confirm_n_cancels() {
+        let mut state = State::default();
+        state.confirm_quit = true;
+        let action =
+            EventHandler::resolve_action(&state, KeyCode::Char('n'), KeyModifiers::NONE);
+        assert!(matches!(action, Some(AppAction::CancelQuit)));
+    }
+
+    #[test]
+    fn test_quit_confirm_arrow_toggles_button() {
+        let mut state = State::default();
+        state.confirm_quit = true;
+        let action =
+            EventHandler::resolve_action(&state, KeyCode::Left, KeyModifiers::NONE);
+        assert!(matches!(action, Some(AppAction::ToggleQuitButton)));
+    }
+
+    #[test]
+    fn test_q_key_dispatches_request_quit_on_main_screen() {
+        let state = State::default();
+        let action =
+            EventHandler::resolve_action(&state, KeyCode::Char('q'), KeyModifiers::NONE);
+        assert!(matches!(action, Some(AppAction::RequestQuit)));
     }
 
     #[test]

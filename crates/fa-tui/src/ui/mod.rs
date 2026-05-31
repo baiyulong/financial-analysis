@@ -8,10 +8,10 @@ pub mod watchlist;
 
 use crate::app::{AppScreen, DataSourceKind, State};
 use ratatui::{
-    layout::Rect,
-    style::{Color, Style},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -74,6 +74,70 @@ pub fn draw(f: &mut Frame, state: &State, refresh_interval: u64) {
             draw_settings(f, f.area(), ss);
         }
     }
+
+    // Overlay: quit confirmation dialog (rendered on top of any screen)
+    if state.confirm_quit {
+        render_quit_confirm(f, state);
+    }
+}
+
+fn render_quit_confirm(f: &mut Frame, state: &State) {
+    let s = state.strings();
+    let area = f.area();
+
+    let popup_w = 38u16.min(area.width);
+    let popup_h = 7u16.min(area.height);
+    let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+    let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+    let popup_area = Rect::new(x, y, popup_w, popup_h);
+
+    f.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" {} ", s.quit_title));
+    let inner = block.inner(popup_area);
+    f.render_widget(block, popup_area);
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(0),    // spacer
+            Constraint::Length(1), // buttons
+            Constraint::Length(1), // spacer
+            Constraint::Length(1), // help text
+        ])
+        .split(inner);
+
+    let confirm_style = if !state.confirm_quit_focused {
+        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+    let cancel_style = if state.confirm_quit_focused {
+        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+
+    let btn_line = Line::from(vec![
+        Span::styled(s.quit_yes, confirm_style),
+        Span::raw("   "),
+        Span::styled(s.quit_no, cancel_style),
+    ]);
+    f.render_widget(
+        Paragraph::new(btn_line).alignment(Alignment::Center),
+        rows[1],
+    );
+
+    let help_line = Line::from(Span::styled(
+        s.quit_help,
+        Style::default().fg(Color::DarkGray),
+    ));
+    f.render_widget(
+        Paragraph::new(help_line).alignment(Alignment::Center),
+        rows[3],
+    );
 }
 
 #[cfg(test)]
@@ -116,5 +180,27 @@ mod tests {
         assert!("数据源:".chars().all(|c| content.contains(c)));
         assert!(content.contains("AkShare"));
         assert!(content.contains("F1-F5"));
+    }
+
+    #[test]
+    fn test_draw_quit_confirm_overlay_appears() {
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut state = State::default();
+        state.confirm_quit = true;
+
+        terminal.draw(|f| draw(f, &state, 5)).unwrap();
+
+        let buf = terminal.backend().buffer().clone();
+        let content: String = buf.content().iter().map(|c| c.symbol()).collect();
+        // Default language is ZH — quit dialog shows Chinese confirm/cancel labels
+        assert!(
+            "确认".chars().all(|c| content.contains(c)),
+            "quit dialog must show confirm button in Chinese"
+        );
+        assert!(
+            "取消".chars().all(|c| content.contains(c)),
+            "quit dialog must show cancel button in Chinese"
+        );
     }
 }
