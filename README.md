@@ -16,10 +16,10 @@
 
 ## 功能
 
-- **实时行情**：Yahoo Finance 数据源，每 30 秒自动刷新
-- **K 线图**：Unicode 块字符渲染（`█` `│`），红涨绿跌（A 股惯例）
+- **实时行情**：默认使用新浪财经，支持 A 股与美股行情，每 30 秒自动刷新
+- **K 线图**：Unicode 块字符渲染（`█` `│`），红涨绿跌（A 股惯例）；默认支持日 / 周 / 月线，AkShare 模式下可查看分钟线
 - **均线指标**：MA5（黄）/ MA10（青）/ MA20（品红），连续折线
-- **自选股管理**：支持 A 股（sh/sz 前缀）和美股，运行时按 `a` 添加新股票
+- **自选股管理**：支持 A 股（sh/sz 前缀）和美股，运行时按 `a` 添加新股票，支持模糊搜索
 - **回测引擎**：按 `b` 对选中股票运行历史策略回测（双均线、RSI、布林带），查看收益、回撤、Sharpe 比率
 - **持仓跟踪**：记录成本价、数量，计算盈亏
 
@@ -50,6 +50,10 @@ cargo run --release
 [general]
 refresh_interval = 30      # 行情刷新间隔（秒）
 default_currency = "CNY"
+
+[data_source]
+provider = "sina"         # 可选："sina" / "akshare"
+akshare_url = "http://127.0.0.1:8080"
 
 # A 股：使用 sh（上交所）或 sz（深交所）前缀
 [[watchlist]]
@@ -84,45 +88,81 @@ cost_basis = "1800.00"
 | `a_share` | A 股（上交所 `sh` / 深交所 `sz`） |
 | `us` | 美股 |
 
-## 键盘操作
+## 数据源设置
+
+应用目前支持两种 A 股 K 线数据源：**新浪财经（Sina Finance）**（默认）与 **AkShare（通过 AKTools HTTP 服务）**。
+
+- **新浪财经**：内置可用，无需额外部署。适合直接查看 A 股实时行情，以及日 / 周 / 月级别 K 线。
+- **AkShare（AKTools）**：通过本地 Python HTTP 服务提供 A 股分钟级 K 线（`1m` / `5m` / `15m` / `30m` / `60m`）。
+
+```bash
+pip install aktools
+python -m aktools
+```
+
+默认服务地址：`http://127.0.0.1:8080`
+
+运行时可在主界面按 `s` 打开设置：使用 `Space` 切换数据源；若焦点在 URL 字段上，再按 `Space` 开始编辑地址；按 `Enter` 保存。
+
+数据源设置会持久化到 `~/.config/fa/config.toml`：
+
+```toml
+[data_source]
+provider = "sina"         # 或 "akshare"
+akshare_url = "http://127.0.0.1:8080"
+```
+
+## 快捷键
 
 ### 主界面
 
 | 按键 | 功能 |
 |---|---|
-| `↑` / `↓` | 在自选股列表中移动 |
-| `Tab` | 切换面板 |
-| `Enter` | 进入 K 线图 |
+| `↑` / `↓` | 在当前列表中移动 |
+| `Tab` | 在自选股 / 持仓面板之间切换 |
+| `a` | 添加股票（支持模糊搜索） |
+| `d` | 删除当前选中的股票 |
+| `Enter` | 查看当前股票的 K 线图 |
+| `s` | 打开设置 |
+| `b` | 进入回测模式 |
 | `/` | 搜索（输入后实时过滤） |
-| `Backspace` | 删除搜索字符 |
-| `Esc` | 取消搜索 / 取消添加 |
-| `a` | 添加股票到自选列表 |
-| `b` | 对选中股票进入回测模式 |
-| `d` | 从列表删除当前股票 |
 | `r` | 手动刷新行情 |
+| `Esc` | 取消搜索 / 取消添加 |
 | `q` / `Ctrl+C` | 退出 |
 
-> **添加股票说明：** 按 `a` 进入输入模式，输入代码后按 `Enter` 确认，按 `Esc` 取消。代码格式：
+> **添加股票说明：** 按 `a` 后可输入股票代码或名称关键字，候选列表会实时更新；按 `Enter` 确认，按 `Esc` 取消。
+>
 > - A 股：`sh000001`（上交所）、`sz399001`（深交所）、或直接输入 6 位数字如 `600519`
 > - 美股：直接输入 ticker，如 `TSLA`、`NVDA`
->
-> 添加后按 `r` 手动刷新，或等待下次自动刷新（约 30 秒）获取最新行情。
 
 ### K 线图界面
 
 | 按键 | 功能 |
 |---|---|
-| `←` / `→` | 移动时间轴光标 |
-| `[` | 缩小（每根 bar 更窄，显示更多） |
-| `]` | 放大（每根 bar 更宽） |
-| `1` | 切换为日线（近 1 天） |
-| `5` | 切换为周线（近 5 天） |
-| `m` | 切换为月线（近 1 月） |
-| `q` | 切换为季线（近 3 月） |
-| `y` | 切换为年线（近 1 年） |
+| `1` | 切换为日线 |
+| `5` | 切换为周线 |
+| `m` | 切换为月线 |
+| `q` | 切换为季线 |
+| `y` | 切换为年线 |
+| `F1` | 1 分钟线（仅 AkShare） |
+| `F2` | 5 分钟线（仅 AkShare） |
+| `F3` | 15 分钟线（仅 AkShare） |
+| `F4` | 30 分钟线（仅 AkShare） |
+| `F5` | 60 分钟线（仅 AkShare） |
+| `←` / `→` | 移动光标；在最左侧继续按 `←` 会自动请求更长周期历史数据 |
+| `[` / `]` | 缩小 / 放大每根 bar 的宽度 |
 | `Esc` | 返回主界面 |
 
-底部状态栏实时显示光标所在 bar 的 OHLCV 数据及涨跌幅。
+底部状态栏会显示当前数据源，以及光标所在 bar 的 OHLCV 数据与涨跌幅。
+
+### 设置界面
+
+| 按键 | 功能 |
+|---|---|
+| `↑` / `↓` | 在字段间移动 |
+| `Space` | 切换数据源 / 开始或结束 URL 编辑 |
+| `Enter` | 保存并关闭 |
+| `Esc` | 取消并返回主界面 |
 
 ### 回测界面
 
@@ -148,7 +188,7 @@ financial-analysis/
 ├── config/default.toml      # 内置默认配置（复制到 ~/.config/fa/ 自定义）
 └── crates/
     ├── fa-core/             # 基础数据类型：OHLCV、Symbol、Period、Market
-    ├── fa-data/             # 数据源：Yahoo Finance HTTP 客户端、缓存路由
+    ├── fa-data/             # 数据源：新浪 / AkShare / Yahoo Finance 路由
     ├── fa-indicator/        # 技术指标：SMA（简单移动平均）
     └── fa-tui/              # TUI 层：AppState、EventHandler、图表渲染
 ```
@@ -157,7 +197,7 @@ financial-analysis/
 
 ```
 DataFetcher (Tokio task)
-    │  fetch OHLCV via Yahoo Finance /v8/finance/chart/
+    │  fetch quote / OHLCV via ProviderRouter（新浪 / AkShare / Yahoo）
     ▼
 Arc<RwLock<AppState>>   ←──  EventHandler (16ms tick, single read lock)
     │
@@ -182,10 +222,10 @@ cargo check --workspace
 
 ## 数据来源
 
-行情数据来自 [Yahoo Finance](https://finance.yahoo.com/) 非官方 API。A 股 ticker 映射规则：
+应用会根据数据类型自动选择可用的数据提供方：
 
-- `sh000001` → `000001.SS`（上交所）
-- `sz399001` → `399001.SZ`（深交所）
-- 个股 `600519` → `600519.SS`
+- **新浪财经（默认）**：A 股实时行情、股票搜索，以及默认模式下的常用 A 股查看体验
+- **AkShare / AKTools**：A 股 `1m` / `5m` / `15m` / `30m` / `60m` 分钟 K 线（需本地 HTTP 服务）
+- **Yahoo Finance**：部分历史行情与美股数据的后备来源
 
-> **注意**：Yahoo Finance 对高频请求有速率限制，默认刷新间隔 30 秒可正常使用。
+> **注意**：第三方非官方数据源可能存在速率限制或临时不可用的情况；若使用 AkShare，请先确认本地 `python -m aktools` 服务已启动。
