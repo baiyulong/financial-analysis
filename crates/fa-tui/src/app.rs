@@ -420,6 +420,7 @@ pub type AppState = Arc<RwLock<State>>;
 /// Returns the next longer time period, or None if already at the maximum.
 pub fn next_longer_period(p: &Period) -> Option<Period> {
     match p {
+        Period::Min1 | Period::Min5 | Period::Min15 | Period::Min30 | Period::Min60 => None,
         Period::Day1   => Some(Period::Week1),
         Period::Week1  => Some(Period::Month1),
         Period::Month1 => Some(Period::Month3),
@@ -900,6 +901,11 @@ mod tests {
     #[test]
     fn test_next_longer_period_full_chain() {
         use fa_core::Period;
+        assert_eq!(next_longer_period(&Period::Min1),   None);
+        assert_eq!(next_longer_period(&Period::Min5),   None);
+        assert_eq!(next_longer_period(&Period::Min15),  None);
+        assert_eq!(next_longer_period(&Period::Min30),  None);
+        assert_eq!(next_longer_period(&Period::Min60),  None);
         assert_eq!(next_longer_period(&Period::Day1),   Some(Period::Week1));
         assert_eq!(next_longer_period(&Period::Week1),  Some(Period::Month1));
         assert_eq!(next_longer_period(&Period::Month1), Some(Period::Month3));

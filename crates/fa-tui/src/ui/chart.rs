@@ -214,6 +214,11 @@ pub fn render(f: &mut Frame, cs: &ChartState, area: Rect) {
 
 fn period_label(p: &Period) -> &'static str {
     match p {
+        Period::Min1   => "1m",
+        Period::Min5   => "5m",
+        Period::Min15  => "15m",
+        Period::Min30  => "30m",
+        Period::Min60  => "60m",
         Period::Day1   => "1D",
         Period::Week1  => "5D",
         Period::Month1 => "1M",
