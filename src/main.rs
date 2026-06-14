@@ -51,8 +51,8 @@ fn build_initial_state(db: &Storage) -> State {
     let (provider_opt, url_opt) = db.load_data_source();
     let data_source = match provider_opt.as_deref() {
         Some("akshare") => DataSourceKind::AkShare,
-        Some("zhitu") => DataSourceKind::Zhitu,
-        _ => DataSourceKind::Sina,
+        Some("sina") => DataSourceKind::Sina,
+        _ => DataSourceKind::Zhitu,
     };
     let akshare_url = url_opt.unwrap_or_else(|| "http://127.0.0.1:8080".to_string());
     use std::str::FromStr;
@@ -462,7 +462,7 @@ mod tests {
         let router_config = router_config_after_action(&mut state, AppAction::SettingsSaved);
 
         assert!(router_config.is_none());
-        assert_eq!(state.data_source, DataSourceKind::Sina);
+        assert_eq!(state.data_source, DataSourceKind::Zhitu);
     }
 
     #[test]

@@ -74,6 +74,15 @@ pub fn draw_settings(f: &mut Frame, area: Rect, ss: &SettingsState) {
                 inactive_button
             },
         ),
+        Span::raw(" "),
+        Span::styled(
+            "[ZhituAPI]",
+            if ss.provider == DataSourceKind::Zhitu {
+                active_button
+            } else {
+                inactive_button
+            },
+        ),
     ]);
 
     let url_line = if ss.provider == DataSourceKind::AkShare {

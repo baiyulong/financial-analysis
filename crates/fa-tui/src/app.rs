@@ -228,7 +228,7 @@ impl Default for State {
             search_generation: 0,
             should_quit: false,
             screen: AppScreen::Main,
-            data_source: DataSourceKind::Sina,
+            data_source: DataSourceKind::Zhitu,
             akshare_url: "http://127.0.0.1:8080".to_string(),
             language: crate::i18n::Language::default(),
             confirm_quit: false,
@@ -1466,7 +1466,7 @@ mod tests {
         ));
         state.apply(AppAction::SettingsSaved);
         assert!(matches!(state.screen, AppScreen::Chart(_)));
-        assert_eq!(state.data_source, DataSourceKind::Sina);
+        assert_eq!(state.data_source, DataSourceKind::Zhitu);
     }
 
     #[test]
@@ -1487,7 +1487,7 @@ mod tests {
         state.apply(AppAction::SettingsSelectProvider(DataSourceKind::AkShare));
         state.apply(AppAction::ExitSettings);
         assert!(matches!(state.screen, AppScreen::Main));
-        assert_eq!(state.data_source, DataSourceKind::Sina);
+        assert_eq!(state.data_source, DataSourceKind::Zhitu);
         assert_eq!(state.akshare_url, "http://127.0.0.1:8080");
     }
 
