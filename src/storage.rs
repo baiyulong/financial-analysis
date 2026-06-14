@@ -101,6 +101,14 @@ impl Storage {
         self.get_setting("language")
     }
 
+    pub fn save_zhitu_token(&self, token: &str) -> Result<()> {
+        self.set_setting("zhitu.token", token)
+    }
+
+    pub fn load_zhitu_token(&self) -> Option<String> {
+        self.get_setting("zhitu.token")
+    }
+
     // ── Watchlist ─────────────────────────────────────────────────────────────
 
     pub fn load_watchlist(&self) -> Vec<Symbol> {
@@ -259,6 +267,17 @@ mod tests {
         assert_eq!(s.load_language().as_deref(), Some("en"));
         s.save_language("zh").unwrap();
         assert_eq!(s.load_language().as_deref(), Some("zh"));
+    }
+
+    #[test]
+    fn test_zhitu_token_roundtrip() {
+        let s = in_memory();
+        assert_eq!(s.load_zhitu_token(), None);
+        s.save_zhitu_token("my-secret-token").unwrap();
+        assert_eq!(s.load_zhitu_token().as_deref(), Some("my-secret-token"));
+        // overwrite
+        s.save_zhitu_token("new-token").unwrap();
+        assert_eq!(s.load_zhitu_token().as_deref(), Some("new-token"));
     }
 
     #[test]

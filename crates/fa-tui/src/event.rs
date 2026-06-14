@@ -165,7 +165,8 @@ impl EventHandler {
                 if ss.focused_field == 0 {
                     let next = match ss.provider {
                         DataSourceKind::Sina => DataSourceKind::AkShare,
-                        DataSourceKind::AkShare => DataSourceKind::Sina,
+                        DataSourceKind::AkShare => DataSourceKind::Zhitu,
+                        DataSourceKind::Zhitu => DataSourceKind::Sina,
                     };
                     Some(AppAction::SettingsSelectProvider(next))
                 } else if ss.focused_field == 2 {

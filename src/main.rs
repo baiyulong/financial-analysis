@@ -11,7 +11,7 @@ use fa_backtest::{BuiltinStrategy, Engine};
 use fa_core::DataProvider;
 use fa_data::{
     akshare::AkShareProvider, router::ProviderRouter, sina::SinaFinanceProvider,
-    yahoo::YahooFinanceProvider,
+    yahoo::YahooFinanceProvider, zhitu::ZhituProvider,
 };
 use fa_tui::{
     app::{AppAction, AppScreen, AppState, BacktestStatus, DataSourceKind, State},
@@ -27,7 +27,7 @@ use std::{
 use storage::Storage;
 use tokio::sync::mpsc;
 
-fn build_router(kind: DataSourceKind, akshare_url: &str) -> ProviderRouter {
+fn build_router(kind: DataSourceKind, akshare_url: &str, zhitu_token: &str) -> ProviderRouter {
     match kind {
         DataSourceKind::Sina => ProviderRouter::new(vec![
             Arc::new(SinaFinanceProvider::new()) as Arc<dyn DataProvider>,
@@ -39,6 +39,11 @@ fn build_router(kind: DataSourceKind, akshare_url: &str) -> ProviderRouter {
             Arc::new(SinaFinanceProvider::new()) as Arc<dyn DataProvider>,
             Arc::new(YahooFinanceProvider::new()) as Arc<dyn DataProvider>,
         ]),
+        DataSourceKind::Zhitu => ProviderRouter::new(vec![
+            Arc::new(ZhituProvider::new(zhitu_token)) as Arc<dyn DataProvider>,
+            Arc::new(SinaFinanceProvider::new()) as Arc<dyn DataProvider>,
+            Arc::new(YahooFinanceProvider::new()) as Arc<dyn DataProvider>,
+        ]),
     }
 }
 
@@ -46,6 +51,7 @@ fn build_initial_state(db: &Storage) -> State {
     let (provider_opt, url_opt) = db.load_data_source();
     let data_source = match provider_opt.as_deref() {
         Some("akshare") => DataSourceKind::AkShare,
+        Some("zhitu") => DataSourceKind::Zhitu,
         _ => DataSourceKind::Sina,
     };
     let akshare_url = url_opt.unwrap_or_else(|| "http://127.0.0.1:8080".to_string());
@@ -92,10 +98,14 @@ async fn main() -> Result<()> {
     db.seed_if_empty(&default_cfg)?;
 
     let initial_state = build_initial_state(&db);
+    let zhitu_token = db
+        .load_zhitu_token()
+        .unwrap_or_else(|| "E9EA2DC6-FC0C-4686-8295-D184D68E851C".to_string());
     let storage: Arc<Mutex<Storage>> = Arc::new(Mutex::new(db));
     let router = Arc::new(RwLock::new(Arc::new(build_router(
         initial_state.data_source.clone(),
         &initial_state.akshare_url,
+        &zhitu_token,
     ))));
     let app_state: AppState = Arc::new(tokio::sync::RwLock::new(initial_state));
 
@@ -304,14 +314,26 @@ async fn run_app(
                         let provider_str = match &kind {
                             DataSourceKind::Sina => "sina",
                             DataSourceKind::AkShare => "akshare",
+                            DataSourceKind::Zhitu => "zhitu",
                         };
                         let lang_str = {
                             let state = app_state.read().await;
                             state.language.as_str()
                         };
+                        let zhitu_token = {
+                            if let Ok(db) = storage.lock() {
+                                db.load_zhitu_token()
+                                    .unwrap_or_else(|| {
+                                        "E9EA2DC6-FC0C-4686-8295-D184D68E851C".to_string()
+                                    })
+                            } else {
+                                "E9EA2DC6-FC0C-4686-8295-D184D68E851C".to_string()
+                            }
+                        };
                         {
                             let mut guard = router.write().unwrap();
-                            *guard = Arc::new(build_router(kind, &akshare_url));
+                            *guard =
+                                Arc::new(build_router(kind, &akshare_url, &zhitu_token));
                         }
                         if let Ok(db) = storage.lock() {
                             if let Err(err) = db.save_data_source(provider_str, &akshare_url) {
@@ -445,7 +467,7 @@ mod tests {
 
     #[test]
     fn build_router_supports_us_stocks_for_sina_mode() {
-        let router = build_router(DataSourceKind::Sina, "http://127.0.0.1:8080");
+        let router = build_router(DataSourceKind::Sina, "http://127.0.0.1:8080", "test-token");
 
         assert!(router.supports(&Market::USStock));
         assert!(router.supports(&Market::AShare));
@@ -456,6 +478,7 @@ mod tests {
         let router = Arc::new(RwLock::new(Arc::new(build_router(
             DataSourceKind::Sina,
             "http://127.0.0.1:8080",
+            "test-token",
         ))));
 
         {
@@ -468,6 +491,7 @@ mod tests {
             *guard = Arc::new(build_router(
                 DataSourceKind::AkShare,
                 "http://127.0.0.1:9999",
+                "test-token",
             ));
         }
 

@@ -12,6 +12,7 @@ pub enum DataSourceKind {
     #[default]
     Sina,
     AkShare,
+    Zhitu,
 }
 
 impl DataSourceKind {
@@ -19,6 +20,7 @@ impl DataSourceKind {
         match self {
             DataSourceKind::Sina => "新浪 (Sina)",
             DataSourceKind::AkShare => "AkShare (AKTools HTTP)",
+            DataSourceKind::Zhitu => "ZhituAPI",
         }
     }
 }

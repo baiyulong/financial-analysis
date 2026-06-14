@@ -21,6 +21,7 @@ pub(crate) fn data_source_label(data_source: &DataSourceKind, s: &'static crate:
     match data_source {
         DataSourceKind::Sina => s.data_source_sina,
         DataSourceKind::AkShare => "AkShare",
+        DataSourceKind::Zhitu => "ZhituAPI",
     }
 }
 

@@ -9,6 +9,7 @@ pub mod symbol;
 pub use error::DataError;
 pub use market::Market;
 pub use ohlcv::{Period, OHLCV};
+pub use ohlcv::zhitu_adjust;
 pub use portfolio::{Portfolio, Position};
 pub use provider::DataProvider;
 pub use quote::Quote;

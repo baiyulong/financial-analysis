@@ -60,6 +60,38 @@ impl Symbol {
         }
     }
 
+    /// Ticker format for ZhituAPI: `{code}.{exchange}`
+    pub fn zhitu_ticker(&self) -> String {
+        match &self.market {
+            Market::AShare => {
+                // Strip sh/sz prefix if present, then add exchange suffix
+                if let Some(num) = self.code.strip_prefix("sh") {
+                    format!("{}.SH", num)
+                } else if let Some(num) = self.code.strip_prefix("sz") {
+                    format!("{}.SZ", num)
+                } else if self.code.starts_with('6') || self.code.starts_with('9') {
+                    format!("{}.SH", self.code) // Shanghai
+                } else if self.code.starts_with('4') || self.code.starts_with('8') {
+                    format!("{}.BJ", self.code) // Beijing (NeeQ/STAR)
+                } else {
+                    format!("{}.SZ", self.code) // Shenzhen (0xx, 3xx)
+                }
+            }
+            Market::HKStock => format!("{}.HK", self.code),
+            _ => self.code.clone(),
+        }
+    }
+
+    /// Bare stock code for ZhituAPI (no exchange suffix).
+    /// Strips sh/sz prefix if present. E.g. `sh000001` → `000001`, `600519` → `600519`.
+    pub fn zhitu_bare_code(&self) -> String {
+        self.code
+            .strip_prefix("sh")
+            .or_else(|| self.code.strip_prefix("sz"))
+            .unwrap_or(&self.code)
+            .to_string()
+    }
+
     /// Display code, stripping sh/sz exchange prefix if present
     pub fn display_code(&self) -> String {
         if let Some(num) = self
@@ -135,6 +167,36 @@ mod tests {
         assert_eq!(s.sina_ticker(), "sh600519");
         let s2 = Symbol::new("000001", Market::AShare);
         assert_eq!(s2.sina_ticker(), "sz000001");
+    }
+
+    #[test]
+    fn test_zhitu_ticker_shanghai() {
+        let s = Symbol::new("600519", Market::AShare);
+        assert_eq!(s.zhitu_ticker(), "600519.SH");
+    }
+
+    #[test]
+    fn test_zhitu_ticker_shenzhen() {
+        let s = Symbol::new("000001", Market::AShare);
+        assert_eq!(s.zhitu_ticker(), "000001.SZ");
+    }
+
+    #[test]
+    fn test_zhitu_ticker_index_sh_prefix() {
+        let idx = Symbol::new("sh000001", Market::AShare);
+        assert_eq!(idx.zhitu_ticker(), "000001.SH");
+    }
+
+    #[test]
+    fn test_zhitu_ticker_index_sz_prefix() {
+        let idx = Symbol::new("sz399001", Market::AShare);
+        assert_eq!(idx.zhitu_ticker(), "399001.SZ");
+    }
+
+    #[test]
+    fn test_zhitu_ticker_us_stock() {
+        let s = Symbol::new("AAPL", Market::USStock);
+        assert_eq!(s.zhitu_ticker(), "AAPL");
     }
 
     #[test]

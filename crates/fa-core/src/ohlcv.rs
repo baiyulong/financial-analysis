@@ -111,6 +111,27 @@ impl Period {
             Period::Year5 => "5年",
         }
     }
+
+    /// ZhituAPI level parameter for OHLCV endpoints.
+    /// Returns None for periods not supported by ZhituAPI.
+    pub fn zhitu_level(&self) -> Option<&'static str> {
+        match self {
+            Period::Min5 => Some("5"),
+            Period::Min15 => Some("15"),
+            Period::Min30 => Some("30"),
+            Period::Min60 => Some("60"),
+            Period::Day1 => Some("d"),
+            Period::Week1 => Some("w"),
+            Period::Month1 => Some("m"),
+            Period::Year1 => Some("y"),
+            _ => None, // Min1, Month3, Month6, Year5 not supported
+        }
+    }
+}
+
+/// ZhituAPI adjust type. Default: forward-adjusted ("qfq" style = "fr").
+pub fn zhitu_adjust() -> &'static str {
+    "fr" // forward-adjusted (前复权)
 }
 
 #[cfg(test)]
@@ -183,6 +204,31 @@ mod tests {
         assert_eq!(Period::Min1.label(), "1分");
         assert_eq!(Period::Day1.label(), "日线");
         assert_eq!(Period::Year1.label(), "年线");
+    }
+
+    #[test]
+    fn test_zhitu_level_supported() {
+        assert_eq!(Period::Min5.zhitu_level(), Some("5"));
+        assert_eq!(Period::Min15.zhitu_level(), Some("15"));
+        assert_eq!(Period::Min30.zhitu_level(), Some("30"));
+        assert_eq!(Period::Min60.zhitu_level(), Some("60"));
+        assert_eq!(Period::Day1.zhitu_level(), Some("d"));
+        assert_eq!(Period::Week1.zhitu_level(), Some("w"));
+        assert_eq!(Period::Month1.zhitu_level(), Some("m"));
+        assert_eq!(Period::Year1.zhitu_level(), Some("y"));
+    }
+
+    #[test]
+    fn test_zhitu_level_unsupported() {
+        assert_eq!(Period::Min1.zhitu_level(), None);
+        assert_eq!(Period::Month3.zhitu_level(), None);
+        assert_eq!(Period::Month6.zhitu_level(), None);
+        assert_eq!(Period::Year5.zhitu_level(), None);
+    }
+
+    #[test]
+    fn test_zhitu_adjust() {
+        assert_eq!(zhitu_adjust(), "fr");
     }
 }
 
