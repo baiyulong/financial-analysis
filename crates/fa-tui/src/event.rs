@@ -1,5 +1,5 @@
 use crate::app::{AppAction, AppScreen, AppState, DataSourceKind, State};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use fa_core::Period;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -39,8 +39,11 @@ impl EventHandler {
 
             let action: Option<AppAction> = match maybe_ev {
                 Some(Ok(Event::Key(KeyEvent {
-                    code, modifiers, ..
-                }))) => {
+                    code,
+                    modifiers,
+                    kind,
+                    ..
+                }))) if matches!(kind, KeyEventKind::Press | KeyEventKind::Repeat) => {
                     let s = state.read().await;
                     Self::resolve_action(&s, code, modifiers)
                 }
