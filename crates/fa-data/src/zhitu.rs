@@ -27,6 +27,25 @@ impl ZhituProvider {
         self
     }
 
+    /// Returns true if the symbol represents a market index (e.g. sh000001, sz399001).
+    /// ZhituAPI only supports individual stocks, not indices.
+    /// Bare codes like `000001` are ambiguous (could be stock or index), so only
+    /// prefixed codes (sh/sz/bj + index prefix) are treated as indices.
+    fn is_index_symbol(symbol: &Symbol) -> bool {
+        if !matches!(symbol.market, Market::AShare) {
+            return false;
+        }
+        let stripped = symbol
+            .code
+            .strip_prefix("sh")
+            .or_else(|| symbol.code.strip_prefix("sz"))
+            .or_else(|| symbol.code.strip_prefix("bj"));
+        match stripped {
+            Some(code) => code.starts_with("000") || code.starts_with("399") || code.starts_with("899"),
+            None => false, // bare code treated as stock
+        }
+    }
+
     /// Parse a ZhituAPI timestamp string into a UTC DateTime.
     /// Tries "%Y-%m-%d %H:%M:%S" first, then falls back to "%Y-%m-%d".
     fn parse_timestamp(t: &str) -> Option<chrono::DateTime<Utc>> {
@@ -195,6 +214,11 @@ impl DataProvider for ZhituProvider {
                 market: symbol.market.to_string(),
             });
         }
+        if Self::is_index_symbol(symbol) {
+            return Err(DataError::MarketNotSupported {
+                market: format!("ZhituAPI does not support index {}", symbol.code),
+            });
+        }
 
         let code = symbol.zhitu_bare_code();
         let url = format!(
@@ -210,7 +234,9 @@ impl DataProvider for ZhituProvider {
             .map_err(|e| DataError::Network(e.to_string()))?;
 
         if !resp.status().is_success() {
-            return Err(DataError::Network(format!("HTTP {}", resp.status())));
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(DataError::Network(format!("HTTP {}: {}", status, body)));
         }
 
         let quote_resp: ZhituQuoteResponse = resp
@@ -229,6 +255,11 @@ impl DataProvider for ZhituProvider {
         if !self.supports(&symbol.market) {
             return Err(DataError::MarketNotSupported {
                 market: symbol.market.to_string(),
+            });
+        }
+        if Self::is_index_symbol(symbol) {
+            return Err(DataError::MarketNotSupported {
+                market: format!("ZhituAPI does not support index {}", symbol.code),
             });
         }
 
@@ -250,7 +281,9 @@ impl DataProvider for ZhituProvider {
             .map_err(|e| DataError::Network(e.to_string()))?;
 
         if !resp.status().is_success() {
-            return Err(DataError::Network(format!("HTTP {}", resp.status())));
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(DataError::Network(format!("HTTP {}: {}", status, body)));
         }
 
         let bars: Vec<ZhituOhlcvBar> = resp
@@ -269,6 +302,11 @@ impl DataProvider for ZhituProvider {
         if !self.supports(&symbol.market) {
             return Err(DataError::MarketNotSupported {
                 market: symbol.market.to_string(),
+            });
+        }
+        if Self::is_index_symbol(symbol) {
+            return Err(DataError::MarketNotSupported {
+                market: format!("ZhituAPI does not support index {}", symbol.code),
             });
         }
 
@@ -292,7 +330,9 @@ impl DataProvider for ZhituProvider {
             .map_err(|e| DataError::Network(e.to_string()))?;
 
         if !resp.status().is_success() {
-            return Err(DataError::Network(format!("HTTP {}", resp.status())));
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(DataError::Network(format!("HTTP {}: {}", status, body)));
         }
 
         let bars: Vec<ZhituOhlcvBar> = resp
@@ -462,6 +502,60 @@ mod tests {
         let symbol = Symbol::new("600519", Market::AShare);
         let err = provider
             .fetch_ohlcv(&symbol, Period::Min1)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DataError::MarketNotSupported { .. }));
+    }
+
+    #[test]
+    fn test_is_index_symbol() {
+        // Shanghai indices
+        assert!(ZhituProvider::is_index_symbol(&Symbol::new(
+            "sh000001",
+            Market::AShare
+        )));
+        assert!(ZhituProvider::is_index_symbol(&Symbol::new(
+            "sh000300",
+            Market::AShare
+        )));
+        // Shenzhen indices
+        assert!(ZhituProvider::is_index_symbol(&Symbol::new(
+            "sz399001",
+            Market::AShare
+        )));
+        assert!(ZhituProvider::is_index_symbol(&Symbol::new(
+            "sz399006",
+            Market::AShare
+        )));
+        // Stocks are NOT indices
+        assert!(!ZhituProvider::is_index_symbol(&Symbol::new(
+            "600519",
+            Market::AShare
+        )));
+        assert!(!ZhituProvider::is_index_symbol(&Symbol::new(
+            "000001",
+            Market::AShare
+        ))); // bare code treated as stock
+        assert!(!ZhituProvider::is_index_symbol(&Symbol::new(
+            "AAPL",
+            Market::USStock
+        )));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_quote_rejects_index() {
+        let provider = ZhituProvider::new("test_token");
+        let symbol = Symbol::new("sh000001", Market::AShare);
+        let err = provider.fetch_quote(&symbol).await.unwrap_err();
+        assert!(matches!(err, DataError::MarketNotSupported { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_ohlcv_rejects_index() {
+        let provider = ZhituProvider::new("test_token");
+        let symbol = Symbol::new("sh000001", Market::AShare);
+        let err = provider
+            .fetch_ohlcv(&symbol, Period::Day1)
             .await
             .unwrap_err();
         assert!(matches!(err, DataError::MarketNotSupported { .. }));
