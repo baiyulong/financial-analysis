@@ -206,6 +206,20 @@ fn extended_start_date(period: Period) -> String {
     start.format("%Y%m%d").to_string()
 }
 
+/// Default lookback (in days) used by `fetch_ohlcv` when calling the `/hs/history/` endpoint.
+/// The `/hs/latest/` endpoint caps `limit` at 5, which is too few bars for the chart, so we use
+/// the history endpoint with a sensible default window per period.
+fn default_lookback_days(period: Period) -> i64 {
+    match period {
+        Period::Min5 | Period::Min15 | Period::Min30 | Period::Min60 => 7,
+        Period::Day1 => 120,
+        Period::Week1 => 365,
+        Period::Month1 => 365 * 3,
+        Period::Year1 => 365 * 5,
+        _ => 30,
+    }
+}
+
 #[async_trait]
 impl DataProvider for ZhituProvider {
     async fn fetch_quote(&self, symbol: &Symbol) -> Result<Quote, DataError> {
@@ -268,9 +282,15 @@ impl DataProvider for ZhituProvider {
         })?;
         let adjust = zhitu_adjust();
         let code = symbol.zhitu_bare_code();
+        let now = Utc::now();
+        let st = (now - chrono::Duration::days(default_lookback_days(period)))
+            .format("%Y%m%d")
+            .to_string();
+        let et = now.format("%Y%m%d").to_string();
+        // Use /hs/history/ because /hs/latest/ caps `limit` at 5 — not enough bars for the chart.
         let url = format!(
-            "{}/hs/latest/{}/{}/{}?limit=500&token={}",
-            self.base_url, code, level, adjust, self.token
+            "{}/hs/history/{}/{}/{}?st={}&et={}&token={}",
+            self.base_url, code, level, adjust, st, et, self.token
         );
 
         let resp = self
@@ -467,10 +487,11 @@ mod tests {
         let mock = server
             .mock(
                 "GET",
-                mockito::Matcher::Regex(r"^/hs/latest/600519/d/fr".into()),
+                mockito::Matcher::Regex(r"^/hs/history/600519/d/fr".into()),
             )
             .match_query(mockito::Matcher::AllOf(vec![
-                mockito::Matcher::UrlEncoded("limit".into(), "500".into()),
+                mockito::Matcher::Regex(r"st=\d{8}".into()),
+                mockito::Matcher::Regex(r"et=\d{8}".into()),
                 mockito::Matcher::UrlEncoded("token".into(), "test_token".into()),
             ]))
             .with_status(200)
