@@ -4,3 +4,4 @@ target/
 *.swo
 *~
 .DS_Store
+fa.log
