@@ -1,10 +1,73 @@
 // crates/fa-data/src/sina.rs
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{FixedOffset, NaiveDate, TimeZone, Utc};
 use fa_core::{DataError, DataProvider, Market, Period, Quote, Symbol, OHLCV};
 use rust_decimal::prelude::*;
+use serde::Deserialize;
 
 const DEFAULT_BASE_URL: &str = "https://hq.sinajs.cn";
+const KLINE_BASE_URL: &str =
+    "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData";
+
+/// One K-line bar from Sina Finance's `getKLineData` endpoint.
+/// Fields are returned as strings despite being numeric.
+#[derive(Debug, Deserialize)]
+struct SinaKlineBar {
+    day: String,
+    open: String,
+    high: String,
+    low: String,
+    close: String,
+    volume: String,
+}
+
+fn sina_kline_scale(period: Period) -> Option<&'static str> {
+    match period {
+        Period::Min1 => Some("1"),
+        Period::Min5 => Some("5"),
+        Period::Min15 => Some("15"),
+        Period::Min30 => Some("30"),
+        Period::Min60 => Some("60"),
+        Period::Day1 => Some("240"),
+        Period::Week1 => Some("1200"),
+        Period::Month1 => Some("7200"),
+        _ => None,
+    }
+}
+
+fn sina_kline_datalen(period: Period) -> u32 {
+    match period {
+        Period::Min1 | Period::Min5 | Period::Min15 | Period::Min30 | Period::Min60 => 200,
+        _ => 500,
+    }
+}
+
+fn parse_sina_kline_bars(bars: &[SinaKlineBar], symbol: &Symbol) -> Vec<OHLCV> {
+    let cst = FixedOffset::east_opt(8 * 3600).unwrap();
+    bars.iter()
+        .filter_map(|bar| {
+            let naive = NaiveDate::parse_from_str(&bar.day, "%Y-%m-%d").ok()?;
+            let local_dt = cst
+                .from_local_datetime(&naive.and_hms_opt(0, 0, 0)?)
+                .single()?;
+            let timestamp = local_dt.with_timezone(&Utc);
+            let open = Decimal::from_str(&bar.open).ok()?;
+            let high = Decimal::from_str(&bar.high).ok()?;
+            let low = Decimal::from_str(&bar.low).ok()?;
+            let close = Decimal::from_str(&bar.close).ok()?;
+            let volume = bar.volume.parse::<u64>().unwrap_or(0);
+            Some(OHLCV {
+                symbol: symbol.clone(),
+                timestamp,
+                open,
+                high,
+                low,
+                close,
+                volume,
+            })
+        })
+        .collect()
+}
 
 #[derive(Debug, Clone)]
 pub struct StockSuggestion {
@@ -44,6 +107,7 @@ pub struct SinaFinanceProvider {
     client: reqwest::Client,
     base_url: String,
     suggest_base_url: String,
+    kline_base_url: String,
 }
 
 impl SinaFinanceProvider {
@@ -56,11 +120,17 @@ impl SinaFinanceProvider {
             client: reqwest::Client::new(),
             base_url: base_url.into(),
             suggest_base_url: "https://suggest3.sinajs.cn".to_string(),
+            kline_base_url: KLINE_BASE_URL.to_string(),
         }
     }
 
     pub fn with_suggest_url(mut self, url: impl Into<String>) -> Self {
         self.suggest_base_url = url.into();
+        self
+    }
+
+    pub fn with_kline_url(mut self, url: impl Into<String>) -> Self {
+        self.kline_base_url = url.into();
         self
     }
 
@@ -189,13 +259,54 @@ impl DataProvider for SinaFinanceProvider {
 
     async fn fetch_ohlcv(
         &self,
-        _symbol: &Symbol,
-        _period: Period,
+        symbol: &Symbol,
+        period: Period,
     ) -> Result<Vec<OHLCV>, DataError> {
-        // Sina does not provide OHLCV history; use Yahoo for history
-        Err(DataError::MarketNotSupported {
-            market: "OHLCV not supported by Sina provider".into(),
-        })
+        if !self.supports(&symbol.market) {
+            return Err(DataError::MarketNotSupported {
+                market: symbol.market.to_string(),
+            });
+        }
+        let scale = sina_kline_scale(period).ok_or_else(|| DataError::MarketNotSupported {
+            market: format!("period {:?} not supported by Sina K-line", period),
+        })?;
+        let datalen = sina_kline_datalen(period);
+        let ticker = symbol.sina_ticker();
+        let url = format!(
+            "{}?symbol={}&scale={}&ma=no&datalen={}",
+            self.kline_base_url, ticker, scale, datalen
+        );
+
+        let resp = self
+            .client
+            .get(&url)
+            .header("Referer", "https://finance.sina.com.cn")
+            .header("User-Agent", "Mozilla/5.0")
+            .send()
+            .await
+            .map_err(|e| DataError::Network(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Err(DataError::Network(format!("HTTP {}: {}", status, body)));
+        }
+
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| DataError::Network(e.to_string()))?;
+
+        // Sina returns a JSON array; if the response is empty or invalid, surface it.
+        let trimmed = text.trim();
+        if trimmed.is_empty() || trimmed == "null" {
+            return Ok(vec![]);
+        }
+
+        let bars: Vec<SinaKlineBar> = serde_json::from_str(trimmed)
+            .map_err(|e| DataError::Parse(format!("Sina K-line JSON error: {}", e)))?;
+
+        Ok(parse_sina_kline_bars(&bars, symbol))
     }
 
     fn name(&self) -> &'static str {
@@ -212,6 +323,54 @@ mod tests {
     use super::*;
     use fa_core::{Market, Symbol};
     use mockito::Server;
+
+    #[test]
+    fn test_parse_sina_kline_bars() {
+        let json = r#"[
+            {"day":"2026-06-09","open":"3977.539","high":"4010.872","low":"3955.908","close":"4010.031","volume":"57657009000"},
+            {"day":"2026-06-10","open":"3985.124","high":"4006.313","low":"3963.442","close":"3993.226","volume":"59869473900"}
+        ]"#;
+        let bars: Vec<SinaKlineBar> = serde_json::from_str(json).unwrap();
+        let symbol = Symbol::new("sh000001", Market::AShare);
+        let ohlcv = parse_sina_kline_bars(&bars, &symbol);
+        assert_eq!(ohlcv.len(), 2);
+        assert_eq!(ohlcv[0].close, Decimal::from_str("4010.031").unwrap());
+        assert_eq!(ohlcv[0].volume, 57657009000);
+        assert_eq!(ohlcv[1].open, Decimal::from_str("3985.124").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_ohlcv_via_mock() {
+        let mut server = Server::new_async().await;
+        let body = r#"[{"day":"2026-06-15","open":"4053.582","high":"4097.166","low":"4051.065","close":"4096.472","volume":"67890781100"}]"#;
+
+        let mock = server
+            .mock("GET", mockito::Matcher::Any)
+            .match_query(mockito::Matcher::Regex(r"symbol=sh000001".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body)
+            .create_async()
+            .await;
+
+        let provider = SinaFinanceProvider::new().with_kline_url(server.url());
+        let symbol = Symbol::new("sh000001", Market::AShare);
+        let bars = provider.fetch_ohlcv(&symbol, Period::Day1).await.unwrap();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0].close, Decimal::from_str("4096.472").unwrap());
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_ohlcv_us_stock_rejected() {
+        let provider = SinaFinanceProvider::new();
+        let symbol = Symbol::new("AAPL", Market::USStock);
+        let err = provider
+            .fetch_ohlcv(&symbol, Period::Day1)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DataError::MarketNotSupported { .. }));
+    }
 
     #[test]
     fn test_parse_sina_suggest_basic() {

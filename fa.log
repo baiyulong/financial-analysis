@@ -1,0 +1,4 @@
+[2026-06-15 13:29:22.542] init data_source=Zhitu zhitu_token_len=36 watchlist=5
+[2026-06-15 13:29:24.482] quotes OK count=5
+[2026-06-15 13:29:33.141] K线获取失败 sh000001 AShare extended=false: Network error: all providers failed for OHLCV: [ZhituAPI] Market not supported: ZhituAPI does not support index sh000001; [Sina Finance] Market not supported: OHLCV not supported by Sina provider; [Yahoo Finance] Parse error: error decoding response body
+[2026-06-15 13:29:40.322] K线获取失败 sh000016 AShare extended=false: Network error: all providers failed for OHLCV: [ZhituAPI] Market not supported: ZhituAPI does not support index sh000016; [Sina Finance] Market not supported: OHLCV not supported by Sina provider; [Yahoo Finance] Parse error: error decoding response body
