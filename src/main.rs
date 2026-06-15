@@ -108,6 +108,9 @@ fn router_config_after_action(
 async fn main() -> Result<()> {
     // Open SQLite database (creates fa.db in current working directory)
     let db = Storage::open("fa.db")?;
+    if let Ok(cwd) = std::env::current_dir() {
+        log_diag(&format!("db_path={}", cwd.join("fa.db").display()));
+    }
 
     // On first run, seed watchlist/portfolio from config/default.toml
     let default_cfg = config::Config::load_defaults();
@@ -328,14 +331,32 @@ async fn run_app(
                             "persist_add detected code={} market={:?}",
                             sym.code, sym.market
                         ));
-                        if let Ok(db) = storage.lock() {
-                            let _ = db.add_to_watchlist(sym);
+                        match storage.lock() {
+                            Ok(db) => match db.add_to_watchlist(sym) {
+                                Ok(()) => {
+                                    let count = db.load_watchlist().len();
+                                    log_diag(&format!("persist_add OK, watchlist now={}", count));
+                                }
+                                Err(e) => log_diag(&format!("persist_add FAILED: {}", e)),
+                            },
+                            Err(e) => log_diag(&format!("storage lock poisoned (add): {}", e)),
                         }
                     }
                     // Persist deleted stock
                     if let Some(ref sym) = removed_symbol {
-                        if let Ok(db) = storage.lock() {
-                            let _ = db.remove_from_watchlist(sym);
+                        log_diag(&format!(
+                            "persist_delete detected code={} market={:?}",
+                            sym.code, sym.market
+                        ));
+                        match storage.lock() {
+                            Ok(db) => match db.remove_from_watchlist(sym) {
+                                Ok(()) => {
+                                    let count = db.load_watchlist().len();
+                                    log_diag(&format!("persist_delete OK, watchlist now={}", count));
+                                }
+                                Err(e) => log_diag(&format!("persist_delete FAILED: {}", e)),
+                            },
+                            Err(e) => log_diag(&format!("storage lock poisoned (delete): {}", e)),
                         }
                     }
 

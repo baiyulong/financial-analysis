@@ -160,10 +160,16 @@ impl Storage {
     }
 
     pub fn remove_from_watchlist(&self, symbol: &Symbol) -> Result<()> {
-        self.conn.execute(
+        let affected = self.conn.execute(
             "DELETE FROM watchlist WHERE symbol = ?1 AND market = ?2",
             params![symbol.code, market_key(&symbol.market)],
         )?;
+        crate::log_diag(&format!(
+            "remove_from_watchlist code={} market={} affected={}",
+            symbol.code,
+            market_key(&symbol.market),
+            affected
+        ));
         Ok(())
     }
 
