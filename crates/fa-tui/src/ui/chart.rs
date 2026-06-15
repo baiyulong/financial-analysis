@@ -509,7 +509,39 @@ fn price_to_row(price: f64, y_min: f64, y_max: f64, height: u16) -> u16 {
     row.min(height.saturating_sub(1))
 }
 
+/// Draw a centered, bordered overlay showing a fetch error.
+/// The title is a short i18n label ("数据获取失败" / "Data fetch failed");
+/// the body wraps the provider error text (may span multiple lines).
+fn render_error_overlay(f: &mut Frame, title: &str, message: &str, area: Rect) {
+    let height = (area.height / 2).max(5).min(area.height.saturating_sub(2));
+    let width = area.width.saturating_sub(4).max(20).min(area.width);
+    let popup_area = Rect {
+        x: area.x + (area.width.saturating_sub(width)) / 2,
+        y: area.y + (area.height.saturating_sub(height)) / 2,
+        width,
+        height,
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red))
+        .title(title)
+        .title_alignment(Alignment::Center);
+
+    let text = format!("\n{}", message);
+    let paragraph = Paragraph::new(text)
+        .block(block)
+        .alignment(Alignment::Left)
+        .wrap(ratatui::widgets::Wrap { trim: false });
+
+    f.render_widget(paragraph, popup_area);
+}
+
 fn render_chart_inner(f: &mut Frame, cs: &ChartState, strings: &'static crate::i18n::Strings, area: Rect) {
+    if let Some(ref err_msg) = cs.error {
+        render_error_overlay(f, strings.chart_fetch_error, err_msg, area);
+        return;
+    }
     if cs.loading || cs.data.is_empty() {
         let msg = if cs.loading {
             strings.chart_loading
@@ -570,7 +602,7 @@ fn render_chart_inner(f: &mut Frame, cs: &ChartState, strings: &'static crate::i
 }
 
 fn render_volume_inner(f: &mut Frame, cs: &ChartState, area: Rect) {
-    if cs.loading || cs.data.is_empty() {
+    if cs.loading || cs.data.is_empty() || cs.error.is_some() {
         return;
     }
 
@@ -652,6 +684,7 @@ mod tests {
             bar_width: 3,
             ma_periods: vec![],
             loading: false,
+            error: None,
             is_load_more: false,
             history_extended: false,
         }
@@ -788,6 +821,7 @@ mod tests {
             bar_width: 3,
             ma_periods: vec![],
             loading: false,
+            error: None,
             is_load_more: false,
             history_extended: false,
         };

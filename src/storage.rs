@@ -116,18 +116,25 @@ impl Storage {
             .conn
             .prepare("SELECT symbol, market FROM watchlist ORDER BY position")
             .expect("prepare watchlist query");
-        stmt.query_map([], |row| {
-            let sym: String = row.get(0)?;
-            let mkt: String = row.get(1)?;
-            Ok((sym, mkt))
-        })
-        .expect("query watchlist")
-        .filter_map(|r| {
-            let (sym, mkt) = r.ok()?;
-            let market = mkt.parse::<Market>().ok()?;
-            Some(Symbol::new(&sym, market))
-        })
-        .collect()
+        let items: Vec<Symbol> = stmt
+            .query_map([], |row| {
+                let sym: String = row.get(0)?;
+                let mkt: String = row.get(1)?;
+                Ok((sym, mkt))
+            })
+            .expect("query watchlist")
+            .filter_map(|r| {
+                let (sym, mkt) = r.ok()?;
+                let market = mkt.parse::<Market>().ok()?;
+                Some(Symbol::new(&sym, market))
+            })
+            .collect();
+        crate::log_diag(&format!(
+            "load_watchlist count={}: {:?}",
+            items.len(),
+            items.iter().map(|s| &s.code).collect::<Vec<_>>()
+        ));
+        items
     }
 
     pub fn add_to_watchlist(&self, symbol: &Symbol) -> Result<()> {
@@ -139,10 +146,16 @@ impl Storage {
                 |row| row.get(0),
             )
             .unwrap_or(-1);
-        self.conn.execute(
+        let affected = self.conn.execute(
             "INSERT OR IGNORE INTO watchlist (symbol, market, position) VALUES (?1, ?2, ?3)",
             params![symbol.code, market_key(&symbol.market), max_pos + 1],
         )?;
+        crate::log_diag(&format!(
+            "add_to_watchlist code={} market={} affected={}",
+            symbol.code,
+            market_key(&symbol.market),
+            affected
+        ));
         Ok(())
     }
 

@@ -111,6 +111,10 @@ pub struct ChartState {
     pub bar_width: u16,
     pub ma_periods: Vec<usize>,
     pub loading: bool,
+    /// Error message from the most recent OHLCV fetch attempt.
+    /// Shown as a centered overlay in the chart panel until new data arrives
+    /// or the user navigates away.
+    pub error: Option<String>,
     /// Set by `ChartLoadMoreHistory` so that `ChartDataLoaded` places
     /// the cursor at the oldest bar (index 0) instead of the newest.
     pub is_load_more: bool,
@@ -129,6 +133,7 @@ impl ChartState {
             bar_width: 3,
             ma_periods: vec![5, 10, 20],
             loading: true,
+            error: None,
             is_load_more: false,
             history_extended: false,
         }
@@ -427,6 +432,13 @@ impl State {
                     };
                     cs.loading = false;
                     cs.is_load_more = false;
+                    cs.error = None;
+                }
+            }
+            AppAction::ChartFetchFailed(msg) => {
+                if let AppScreen::Chart(ref mut cs) = self.screen {
+                    cs.loading = false;
+                    cs.error = Some(msg);
                 }
             }
             AppAction::ChartMoveCursor(delta) => {
@@ -454,6 +466,7 @@ impl State {
                     cs.period = period;
                     cs.loading = true;
                     cs.data.clear();
+                    cs.error = None;
                     cs.history_extended = false;
                 }
             }
@@ -464,6 +477,7 @@ impl State {
                         cs.history_extended = true;
                         cs.loading = true;
                         cs.data.clear();
+                        cs.error = None;
                         cs.cursor = 0;
                         cs.is_load_more = true;
                     }
@@ -655,6 +669,9 @@ pub enum AppAction {
     EnterChart(Symbol),
     ExitChart,
     ChartDataLoaded(Vec<OHLCV>),
+    /// OHLCV fetch failed — error message stored on ChartState and rendered
+    /// as a centered overlay in the chart panel.
+    ChartFetchFailed(String),
     ChartMoveCursor(i32),
     ChartZoom(bool),
     ChartChangePeriod(Period),
@@ -978,6 +995,7 @@ mod tests {
             bar_width: 3,
             ma_periods: vec![5],
             loading: false,
+            error: None,
             is_load_more: false,
             history_extended: false,
         });
@@ -1035,6 +1053,7 @@ mod tests {
             bar_width: 3,
             ma_periods: vec![5],
             loading: false,
+            error: None,
             is_load_more: false,
             history_extended: false,
         });

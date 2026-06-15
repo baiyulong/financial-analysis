@@ -11,7 +11,7 @@ use fa_backtest::{BuiltinStrategy, Engine};
 use fa_core::DataProvider;
 use fa_data::{
     akshare::AkShareProvider, router::ProviderRouter, sina::SinaFinanceProvider,
-    yahoo::YahooFinanceProvider, zhitu::ZhituProvider,
+    zhitu::ZhituProvider,
 };
 use fa_tui::{
     app::{AppAction, AppScreen, AppState, BacktestStatus, DataSourceKind, State},
@@ -30,7 +30,7 @@ use tokio::sync::mpsc;
 /// Append a diagnostic message to fa.log. The status bar often truncates
 /// long errors, so this file captures the full text for post-mortem debugging.
 /// Failures are silently ignored.
-fn log_diag(msg: &str) {
+pub(crate) fn log_diag(msg: &str) {
     use std::io::Write;
     let _ = std::fs::OpenOptions::new()
         .create(true)
@@ -47,21 +47,18 @@ fn log_diag(msg: &str) {
 }
 
 fn build_router(kind: DataSourceKind, akshare_url: &str, zhitu_token: &str) -> ProviderRouter {
+    // Each data source uses a single provider only — no automatic fallback.
+    // If the user picks ZhituAPI but opens a US stock (not supported), the
+    // error surfaces directly so they know to switch data sources.
     match kind {
-        DataSourceKind::Sina => ProviderRouter::new(vec![
-            Arc::new(SinaFinanceProvider::new()) as Arc<dyn DataProvider>,
-            Arc::new(YahooFinanceProvider::new()) as Arc<dyn DataProvider>,
-        ]),
+        DataSourceKind::Sina => ProviderRouter::new(vec![Arc::new(SinaFinanceProvider::new())
+            as Arc<dyn DataProvider>]),
         DataSourceKind::AkShare => ProviderRouter::new(vec![
             Arc::new(AkShareProvider::with_base_url(akshare_url.to_string()))
                 as Arc<dyn DataProvider>,
-            Arc::new(SinaFinanceProvider::new()) as Arc<dyn DataProvider>,
-            Arc::new(YahooFinanceProvider::new()) as Arc<dyn DataProvider>,
         ]),
         DataSourceKind::Zhitu => ProviderRouter::new(vec![
             Arc::new(ZhituProvider::new(zhitu_token)) as Arc<dyn DataProvider>,
-            Arc::new(SinaFinanceProvider::new()) as Arc<dyn DataProvider>,
-            Arc::new(YahooFinanceProvider::new()) as Arc<dyn DataProvider>,
         ]),
     }
 }
@@ -327,6 +324,10 @@ async fn run_app(
 
                     // Persist newly added stock
                     if let Some(ref sym) = added_symbol {
+                        log_diag(&format!(
+                            "persist_add detected code={} market={:?}",
+                            sym.code, sym.market
+                        ));
                         if let Ok(db) = storage.lock() {
                             let _ = db.add_to_watchlist(sym);
                         }
@@ -404,11 +405,11 @@ async fn run_app(
                                 }
                                 Err(e) => {
                                     let msg = format!(
-                                        "K线获取失败 {} {:?} extended={}: {}",
+                                        "{} {:?} extended={}: {}",
                                         fetch_symbol.code, fetch_symbol.market, is_extended, e
                                     );
-                                    log_diag(&msg);
-                                    let _ = tx.send(AppAction::StatusMessage(msg)).await;
+                                    log_diag(&format!("K线获取失败 {}", msg));
+                                    let _ = tx.send(AppAction::ChartFetchFailed(msg)).await;
                                 }
                             }
                         });
@@ -504,15 +505,16 @@ mod tests {
     }
 
     #[test]
-    fn build_router_supports_us_stocks_for_sina_mode() {
+    fn build_router_sina_only_supports_a_share() {
         let router = build_router(DataSourceKind::Sina, "http://127.0.0.1:8080", "test-token");
 
-        assert!(router.supports(&Market::USStock));
         assert!(router.supports(&Market::AShare));
+        // Sina alone — no Yahoo fallback for US stocks
+        assert!(!router.supports(&Market::USStock));
     }
 
     #[test]
-    fn shared_router_can_be_rebuilt_for_akshare_mode_without_losing_us_stock_support() {
+    fn shared_router_can_be_rebuilt_for_different_data_sources() {
         let router = Arc::new(RwLock::new(Arc::new(build_router(
             DataSourceKind::Sina,
             "http://127.0.0.1:8080",
@@ -521,20 +523,20 @@ mod tests {
 
         {
             let current = router.read().unwrap();
-            assert!(current.supports(&Market::USStock));
+            assert!(current.supports(&Market::AShare));
         }
 
         {
             let mut guard = router.write().unwrap();
             *guard = Arc::new(build_router(
-                DataSourceKind::AkShare,
+                DataSourceKind::Zhitu,
                 "http://127.0.0.1:9999",
                 "test-token",
             ));
         }
 
         let current = router.read().unwrap();
-        assert!(current.supports(&Market::USStock));
         assert!(current.supports(&Market::AShare));
+        assert!(!current.supports(&Market::USStock));
     }
 }
