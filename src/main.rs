@@ -104,6 +104,30 @@ fn router_config_after_action(
     }
 }
 
+/// Resolve a single symbol's name via the router's search fallback (Sina).
+/// Returns `Some(name)` if a search result matches the symbol's bare code.
+async fn resolve_symbol_name(
+    router: Arc<ProviderRouter>,
+    symbol: &fa_core::Symbol,
+) -> Option<String> {
+    let query = symbol.code.clone();
+    let results = router.search_stocks(&query).await;
+    if results.is_empty() {
+        return None;
+    }
+    // The symbol code may be prefixed (sh/sz/bj); search results use bare codes.
+    let bare: &str = symbol
+        .code
+        .strip_prefix("sh")
+        .or_else(|| symbol.code.strip_prefix("sz"))
+        .or_else(|| symbol.code.strip_prefix("bj"))
+        .unwrap_or(&symbol.code);
+    results
+        .into_iter()
+        .find(|r| r.code == bare || r.code == symbol.code)
+        .map(|r| r.name)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Open SQLite database (creates fa.db in current working directory)
@@ -135,6 +159,43 @@ async fn main() -> Result<()> {
     let app_state: AppState = Arc::new(tokio::sync::RwLock::new(initial_state));
 
     let (tx, mut rx) = mpsc::channel::<AppAction>(64);
+
+    // Resolve missing names at startup via search fallback (Sina).
+    {
+        let state = app_state.read().await;
+        let need_names: Vec<fa_core::Symbol> = state
+            .watchlist
+            .iter()
+            .filter(|s| s.name.is_none())
+            .cloned()
+            .collect();
+        if !need_names.is_empty() {
+            let router_for_names = {
+                let guard = router.read().unwrap();
+                Arc::clone(&*guard)
+            };
+            let tx_names = tx.clone();
+            let storage_names = Arc::clone(&storage);
+            tokio::spawn(async move {
+                let mut resolved = Vec::new();
+                for sym in &need_names {
+                    if let Some(name) =
+                        resolve_symbol_name(Arc::clone(&router_for_names), sym).await
+                    {
+                        let mut full = sym.clone();
+                        full.name = Some(name.clone());
+                        if let Ok(db) = storage_names.lock() {
+                            let _ = db.save_symbol_name(&full);
+                        }
+                        resolved.push((sym.code.clone(), name));
+                    }
+                }
+                if !resolved.is_empty() {
+                    let _ = tx_names.send(AppAction::NamesResolved(resolved)).await;
+                }
+            });
+        }
+    }
 
     // Spawn EventHandler — receives AppState for screen-aware key mapping
     let event_tx = tx.clone();
@@ -340,6 +401,33 @@ async fn run_app(
                                 Err(e) => log_diag(&format!("persist_add FAILED: {}", e)),
                             },
                             Err(e) => log_diag(&format!("storage lock poisoned (add): {}", e)),
+                        }
+
+                        // Resolve name for newly added symbol if missing.
+                        if sym.name.is_none() {
+                            let r = {
+                                let guard = router.read().unwrap();
+                                Arc::clone(&*guard)
+                            };
+                            let tx_n = tx.clone();
+                            let storage_n = Arc::clone(&storage);
+                            let sym_clone = sym.clone();
+                            tokio::spawn(async move {
+                                if let Some(name) =
+                                    resolve_symbol_name(Arc::clone(&r), &sym_clone).await
+                                {
+                                    let mut full = sym_clone;
+                                    full.name = Some(name.clone());
+                                    if let Ok(db) = storage_n.lock() {
+                                        let _ = db.save_symbol_name(&full);
+                                    }
+                                    let _ = tx_n
+                                        .send(AppAction::NamesResolved(vec![(
+                                            full.code, name,
+                                        )]))
+                                        .await;
+                                }
+                            });
                         }
                     }
                     // Persist deleted stock

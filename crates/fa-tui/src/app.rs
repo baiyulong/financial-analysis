@@ -408,6 +408,18 @@ impl State {
                     self.quotes.insert(q.symbol.code.clone(), q);
                 }
             }
+            AppAction::NamesResolved(pairs) => {
+                for (code, name) in pairs {
+                    if name.is_empty() {
+                        continue;
+                    }
+                    if let Some(sym) = self.watchlist.iter_mut().find(|s| s.code == code) {
+                        if sym.name.is_none() {
+                            sym.name = Some(name);
+                        }
+                    }
+                }
+            }
             AppAction::StatusMessage(msg) => {
                 self.status_message = Some(msg);
             }
@@ -665,6 +677,8 @@ pub enum AppAction {
     DeleteSelected,
     Refresh,
     QuotesUpdated(Vec<Quote>),
+    /// Names resolved via search fallback for watchlist symbols that had no name.
+    NamesResolved(Vec<(String, String)>),
     StatusMessage(String),
     EnterChart(Symbol),
     ExitChart,
@@ -1180,6 +1194,41 @@ mod tests {
             Some("贵州茅台".to_string()),
             "None update must not overwrite cached name"
         );
+    }
+
+    #[test]
+    fn test_names_resolved_fills_missing_names() {
+        use fa_core::{Market, Symbol};
+        let mut s = State {
+            watchlist: vec![
+                {
+                    let mut sym = Symbol::new("sh600519", Market::AShare);
+                    sym.name = None;
+                    sym
+                },
+                {
+                    let mut sym = Symbol::new("000001", Market::AShare);
+                    sym.name = Some("已缓存".to_string());
+                    sym
+                },
+                Symbol::new("AAPL", Market::USStock), // name=None, but no resolution provided
+            ],
+            ..Default::default()
+        };
+
+        s.apply(AppAction::NamesResolved(vec![
+            ("sh600519".to_string(), "贵州茅台".to_string()),
+            ("000001".to_string(), "平安银行".to_string()), // must NOT overwrite cached
+            ("MSFT".to_string(), "Microsoft".to_string()),  // not in watchlist → ignored
+        ]));
+
+        assert_eq!(s.watchlist[0].name, Some("贵州茅台".to_string()));
+        assert_eq!(
+            s.watchlist[1].name,
+            Some("已缓存".to_string()),
+            "existing name must not be overwritten"
+        );
+        assert_eq!(s.watchlist[2].name, None, "unmatched code is ignored");
     }
 
     fn make_dummy_ohlcv(symbol: Symbol, count: usize) -> Vec<fa_core::OHLCV> {

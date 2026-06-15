@@ -56,6 +56,15 @@ impl Storage {
             );
             ",
         )?;
+        // Add `name` column to watchlist if it doesn't exist yet.
+        let has_name: bool = self
+            .conn
+            .prepare("SELECT name FROM watchlist LIMIT 0")
+            .is_ok();
+        if !has_name {
+            self.conn
+                .execute_batch("ALTER TABLE watchlist ADD COLUMN name TEXT;")?;
+        }
         Ok(())
     }
 
@@ -114,25 +123,35 @@ impl Storage {
     pub fn load_watchlist(&self) -> Vec<Symbol> {
         let mut stmt = self
             .conn
-            .prepare("SELECT symbol, market FROM watchlist ORDER BY position")
+            .prepare("SELECT symbol, market, name FROM watchlist ORDER BY position")
             .expect("prepare watchlist query");
         let items: Vec<Symbol> = stmt
             .query_map([], |row| {
                 let sym: String = row.get(0)?;
                 let mkt: String = row.get(1)?;
-                Ok((sym, mkt))
+                let name: Option<String> = row.get(2)?;
+                Ok((sym, mkt, name))
             })
             .expect("query watchlist")
             .filter_map(|r| {
-                let (sym, mkt) = r.ok()?;
+                let (sym, mkt, name) = r.ok()?;
                 let market = mkt.parse::<Market>().ok()?;
-                Some(Symbol::new(&sym, market))
+                let mut symbol = Symbol::new(&sym, market);
+                if let Some(n) = name {
+                    if !n.is_empty() {
+                        symbol = symbol.with_name(n);
+                    }
+                }
+                Some(symbol)
             })
             .collect();
         crate::log_diag(&format!(
             "load_watchlist count={}: {:?}",
             items.len(),
-            items.iter().map(|s| &s.code).collect::<Vec<_>>()
+            items
+                .iter()
+                .map(|s| format!("{}({})", s.code, s.name.as_deref().unwrap_or("?")))
+                .collect::<Vec<_>>()
         ));
         items
     }
@@ -147,13 +166,29 @@ impl Storage {
             )
             .unwrap_or(-1);
         let affected = self.conn.execute(
-            "INSERT OR IGNORE INTO watchlist (symbol, market, position) VALUES (?1, ?2, ?3)",
-            params![symbol.code, market_key(&symbol.market), max_pos + 1],
+            "INSERT OR IGNORE INTO watchlist (symbol, market, position, name) VALUES (?1, ?2, ?3, ?4)",
+            params![symbol.code, market_key(&symbol.market), max_pos + 1, symbol.name],
         )?;
         crate::log_diag(&format!(
-            "add_to_watchlist code={} market={} affected={}",
+            "add_to_watchlist code={} market={} name={:?} affected={}",
             symbol.code,
             market_key(&symbol.market),
+            symbol.name,
+            affected
+        ));
+        Ok(())
+    }
+
+    pub fn save_symbol_name(&self, symbol: &Symbol) -> Result<()> {
+        let affected = self.conn.execute(
+            "UPDATE watchlist SET name = ?1 WHERE symbol = ?2 AND market = ?3",
+            params![symbol.name, symbol.code, market_key(&symbol.market)],
+        )?;
+        crate::log_diag(&format!(
+            "save_symbol_name code={} market={} name={:?} affected={}",
+            symbol.code,
+            market_key(&symbol.market),
+            symbol.name,
             affected
         ));
         Ok(())
@@ -358,6 +393,29 @@ mod tests {
         let port = s.load_portfolio();
         assert_eq!(port.positions.len(), 1);
         assert_eq!(port.positions[0].symbol.code, "AAPL");
+    }
+
+    #[test]
+    fn test_watchlist_save_symbol_name() {
+        let s = in_memory();
+        let mut sym = Symbol::new("600519", Market::AShare);
+        s.add_to_watchlist(&sym).unwrap();
+        assert_eq!(s.load_watchlist()[0].name, None);
+
+        sym.name = Some("贵州茅台".to_string());
+        s.save_symbol_name(&sym).unwrap();
+        let loaded = s.load_watchlist();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].name.as_deref(), Some("贵州茅台"));
+
+        // Overwrite name
+        sym.name = Some("新名称".to_string());
+        s.save_symbol_name(&sym).unwrap();
+        assert_eq!(
+            s.load_watchlist()[0].name.as_deref(),
+            Some("新名称"),
+            "name must be overwritable"
+        );
     }
 
     #[test]
