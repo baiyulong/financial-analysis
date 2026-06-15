@@ -74,13 +74,28 @@ impl DataProvider for ProviderRouter {
 
     async fn fetch_ohlcv(&self, symbol: &Symbol, period: Period) -> Result<Vec<OHLCV>, DataError> {
         let candidates = self.providers_for(&symbol.market);
+        if candidates.is_empty() {
+            return Err(DataError::MarketNotSupported {
+                market: symbol.market.to_string(),
+            });
+        }
+        let mut errors: Vec<(String, DataError)> = Vec::new();
         for provider in candidates {
+            let name = provider.name().to_string();
             match provider.fetch_ohlcv(symbol, period).await {
                 Ok(data) => return Ok(data),
-                Err(_) => continue,
+                Err(e) => errors.push((name, e)),
             }
         }
-        Err(DataError::Network("all providers failed for OHLCV".into()))
+        let summary = errors
+            .into_iter()
+            .map(|(n, e)| format!("[{}] {}", n, e))
+            .collect::<Vec<_>>()
+            .join("; ");
+        Err(DataError::Network(format!(
+            "all providers failed for OHLCV: {}",
+            summary
+        )))
     }
 
     async fn fetch_ohlcv_extended(
@@ -89,15 +104,28 @@ impl DataProvider for ProviderRouter {
         period: Period,
     ) -> Result<Vec<OHLCV>, DataError> {
         let candidates = self.providers_for(&symbol.market);
+        if candidates.is_empty() {
+            return Err(DataError::MarketNotSupported {
+                market: symbol.market.to_string(),
+            });
+        }
+        let mut errors: Vec<(String, DataError)> = Vec::new();
         for provider in candidates {
+            let name = provider.name().to_string();
             match provider.fetch_ohlcv_extended(symbol, period).await {
                 Ok(data) => return Ok(data),
-                Err(_) => continue,
+                Err(e) => errors.push((name, e)),
             }
         }
-        Err(DataError::Network(
-            "all providers failed for extended OHLCV".into(),
-        ))
+        let summary = errors
+            .into_iter()
+            .map(|(n, e)| format!("[{}] {}", n, e))
+            .collect::<Vec<_>>()
+            .join("; ");
+        Err(DataError::Network(format!(
+            "all providers failed for extended OHLCV: {}",
+            summary
+        )))
     }
 
     fn name(&self) -> &'static str {
