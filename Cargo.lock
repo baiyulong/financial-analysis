@@ -491,6 +491,7 @@ name = "financial-analysis"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "crossterm",
  "dirs",
  "fa-backtest",

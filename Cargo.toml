@@ -51,5 +51,6 @@ serde        = { workspace = true }
 rust_decimal = { workspace = true }
 crossterm    = { workspace = true }
 ratatui      = { workspace = true }
+chrono       = { workspace = true }
 dirs         = "5"
 rusqlite     = { workspace = true }

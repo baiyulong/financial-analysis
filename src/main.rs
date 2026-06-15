@@ -27,6 +27,25 @@ use std::{
 use storage::Storage;
 use tokio::sync::mpsc;
 
+/// Append a diagnostic message to fa.log. The status bar often truncates
+/// long errors, so this file captures the full text for post-mortem debugging.
+/// Failures are silently ignored.
+fn log_diag(msg: &str) {
+    use std::io::Write;
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("fa.log")
+        .and_then(|mut f| {
+            writeln!(
+                f,
+                "[{}] {}",
+                chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                msg
+            )
+        });
+}
+
 fn build_router(kind: DataSourceKind, akshare_url: &str, zhitu_token: &str) -> ProviderRouter {
     match kind {
         DataSourceKind::Sina => ProviderRouter::new(vec![
@@ -101,6 +120,12 @@ async fn main() -> Result<()> {
     let zhitu_token = db
         .load_zhitu_token()
         .unwrap_or_else(|| "E9EA2DC6-FC0C-4686-8295-D184D68E851C".to_string());
+    log_diag(&format!(
+        "init data_source={:?} zhitu_token_len={} watchlist={}",
+        initial_state.data_source,
+        zhitu_token.len(),
+        initial_state.watchlist.len()
+    ));
     let storage: Arc<Mutex<Storage>> = Arc::new(Mutex::new(db));
     let router = Arc::new(RwLock::new(Arc::new(build_router(
         initial_state.data_source.clone(),
@@ -139,6 +164,8 @@ async fn main() -> Result<()> {
                 match router.fetch_quote(sym).await {
                     Ok(q) => quotes.push(q),
                     Err(e) => {
+                        let msg = format!("[!] {} {:?} quote fetch failed: {}", sym.code, sym.market, e);
+                        log_diag(&msg);
                         let _ = fetcher_tx
                             .send(AppAction::StatusMessage(format!(
                                 "[!] {} fetch failed: {}",
@@ -149,6 +176,7 @@ async fn main() -> Result<()> {
                 }
             }
             if !quotes.is_empty() {
+                log_diag(&format!("quotes OK count={}", quotes.len()));
                 let _ = fetcher_tx.send(AppAction::QuotesUpdated(quotes)).await;
             }
 
@@ -335,6 +363,11 @@ async fn run_app(
                             *guard =
                                 Arc::new(build_router(kind, &akshare_url, &zhitu_token));
                         }
+                        log_diag(&format!(
+                            "router rebuilt data_source={:?} token_len={}",
+                            provider_str,
+                            zhitu_token.len()
+                        ));
                         if let Ok(db) = storage.lock() {
                             if let Err(err) = db.save_data_source(provider_str, &akshare_url) {
                                 let _ = tx
@@ -355,6 +388,7 @@ async fn run_app(
                         };
                         let tx = tx.clone();
                         tokio::spawn(async move {
+                            let fetch_symbol = symbol.clone();
                             let result = if is_extended {
                                 router.fetch_ohlcv_extended(&symbol, period).await
                             } else {
@@ -362,15 +396,19 @@ async fn run_app(
                             };
                             match result {
                                 Ok(data) => {
+                                    log_diag(&format!(
+                                        "OHLCV OK {} {:?} extended={} bars={}",
+                                        fetch_symbol.code, fetch_symbol.market, is_extended, data.len()
+                                    ));
                                     let _ = tx.send(AppAction::ChartDataLoaded(data)).await;
                                 }
                                 Err(e) => {
-                                    let _ = tx
-                                        .send(AppAction::StatusMessage(format!(
-                                            "K线获取失败: {}",
-                                            e
-                                        )))
-                                        .await;
+                                    let msg = format!(
+                                        "K线获取失败 {} {:?} extended={}: {}",
+                                        fetch_symbol.code, fetch_symbol.market, is_extended, e
+                                    );
+                                    log_diag(&msg);
+                                    let _ = tx.send(AppAction::StatusMessage(msg)).await;
                                 }
                             }
                         });
