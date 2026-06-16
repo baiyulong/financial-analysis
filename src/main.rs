@@ -105,26 +105,48 @@ fn router_config_after_action(
 }
 
 /// Resolve a single symbol's name via the router's search fallback (Sina).
-/// Returns `Some(name)` if a search result matches the symbol's bare code.
+/// Returns `Some(name)` if a search result matches the symbol's code.
 async fn resolve_symbol_name(
     router: Arc<ProviderRouter>,
     symbol: &fa_core::Symbol,
 ) -> Option<String> {
     let query = symbol.code.clone();
     let results = router.search_stocks(&query).await;
+    log_diag(&format!(
+        "resolve_name query={} results={} codes={:?}",
+        query,
+        results.len(),
+        results.iter().take(5).map(|r| &r.code).collect::<Vec<_>>()
+    ));
     if results.is_empty() {
         return None;
     }
-    // The symbol code may be prefixed (sh/sz/bj); search results use bare codes.
-    let bare: &str = symbol
+    // Sina search returns prefixed codes (sh600519, sz000001), while the
+    // watchlist may store either the prefixed form or the bare code. Build
+    // a candidate set covering both and match against any of them.
+    let bare: Option<&str> = symbol
         .code
         .strip_prefix("sh")
         .or_else(|| symbol.code.strip_prefix("sz"))
-        .or_else(|| symbol.code.strip_prefix("bj"))
-        .unwrap_or(&symbol.code);
+        .or_else(|| symbol.code.strip_prefix("bj"));
+    let candidates: Vec<String> = if let Some(b) = bare {
+        vec![
+            symbol.code.clone(),
+            format!("sh{}", b),
+            format!("sz{}", b),
+            format!("bj{}", b),
+        ]
+    } else {
+        vec![
+            symbol.code.clone(),
+            format!("sh{}", symbol.code),
+            format!("sz{}", symbol.code),
+            format!("bj{}", symbol.code),
+        ]
+    };
     results
         .into_iter()
-        .find(|r| r.code == bare || r.code == symbol.code)
+        .find(|r| candidates.iter().any(|c| *c == r.code))
         .map(|r| r.name)
 }
 
